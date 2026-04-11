@@ -1,0 +1,20 @@
+fresh() {
+    . ./.project_aliases
+}
+
+fitsetup() {
+  local name="$1"
+  local worktree="/home/wallanramos/www/$name"
+  local gitdir="/home/wallanramos/git/$name.git"
+
+  mkdir -p "$worktree"
+  mkdir -p /home/wallanramos/git
+
+  git init -b main --separate-git-dir="$gitdir" "$worktree" &&
+  git -C "$worktree" commit --allow-empty -m "Initial commit"
+}
+
+alias fit='\git log --oneline --graph --all --decorate'
+alias fitn='git add -A && git commit --allow-empty -m'
+
+alias fitp='git push origin main'
