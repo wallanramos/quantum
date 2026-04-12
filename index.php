@@ -143,6 +143,36 @@
             margin-top: 12px;
         }
 
+        .position-signal {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+            padding: 16px;
+            margin-bottom: 16px;
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .position-label {
+            font-size: 0.85rem;
+            color: #9ca3af;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .position-text {
+            font-size: 1.2rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .position-text.compra { color: #10b981; }
+        .position-text.vende { color: #f87171; }
+        .position-text.espera { color: #fbbf24; }
+
         .btn {
             background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
             color: white;
@@ -348,7 +378,7 @@
         .ai-response p { margin-bottom: 12px; }
         .ai-response ul, .ai-response ol { margin-left: 24px; margin-bottom: 12px; }
         .ai-response li { margin-bottom: 6px; }
-        .ai-response strong { color: #8b5cf6; }
+        .ai-response strong { color: #10b981; }
 
         .ai-response code {
             background: rgba(139, 92, 246, 0.2);
@@ -534,6 +564,10 @@
             <!-- Card de Preço -->
             <div class="card">
                 <div class="card-title">Preço OSMO</div>
+                <div id="positionSignal" class="position-signal" style="display: none;">
+                    <span class="position-label">Posição:</span>
+                    <span id="positionText" class="position-text">-</span>
+                </div>
                 <div class="price-display" id="price">...</div>
                 <div class="status-text" id="status">Carregando dados...</div>
                 <div class="btn-group">
@@ -569,8 +603,8 @@
                 <div class="card-title" style="margin-bottom: 0;">OSMO / USD — velas</div>
                 <div class="chart-timeframes" role="group" aria-label="Intervalo do gráfico">
                     <button type="button" class="timeframe-btn" data-tf="1m" onclick="setPriceChartTimeframe('1m')">1m</button>
-                    <button type="button" class="timeframe-btn active" data-tf="15m" onclick="setPriceChartTimeframe('15m')">15m</button>
-                    <button type="button" class="timeframe-btn" data-tf="1h" onclick="setPriceChartTimeframe('1h')">1h</button>
+                    <button type="button" class="timeframe-btn" data-tf="15m" onclick="setPriceChartTimeframe('15m')">15m</button>
+                    <button type="button" class="timeframe-btn active" data-tf="1h" onclick="setPriceChartTimeframe('1h')">1h</button>
                 </div>
             </div>
             <div class="chart-wrap">

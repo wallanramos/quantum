@@ -2,7 +2,7 @@ let updateInterval = null;
 let lwChart = null;
 let chartResizeHandler = null;
 let rawPriceHistory = [];
-let currentChartTimeframe = '15m';
+let currentChartTimeframe = '1h';
 let chartRefreshTimer = null;
 
 const CHART_RANGE_MS = {
@@ -65,6 +65,30 @@ function buildCandles(items) {
         .sort((a, b) => a.time - b.time);
 }
 
+function calculateEMA(candles, period) {
+    const ema = [];
+    const multiplier = 2 / (period + 1);
+    
+    for (let i = 0; i < candles.length; i++) {
+        if (i < period - 1) {
+            ema.push({ time: candles[i].time, value: null });
+        } else if (i === period - 1) {
+            // SMA inicial
+            let sum = 0;
+            for (let j = 0; j < period; j++) {
+                sum += candles[j].close;
+            }
+            ema.push({ time: candles[i].time, value: sum / period });
+        } else {
+            // EMA = (Preço atual × multiplicador) + (EMA anterior × (1 - multiplicador))
+            const prevEma = ema[i - 1].value;
+            const newEma = (candles[i].close * multiplier) + (prevEma * (1 - multiplier));
+            ema.push({ time: candles[i].time, value: newEma });
+        }
+    }
+    return ema;
+}
+
 function renderPriceChart() {
     const container = document.getElementById('priceChartContainer');
     const emptyEl   = document.getElementById('chartEmpty');
@@ -124,6 +148,27 @@ function renderPriceChart() {
             wickUpColor: '#34d399', wickDownColor: '#f87171'
         });
         series.setData(candles);
+
+        // Adicionar EMA 9
+        const ema9Data = calculateEMA(candles, 9).filter(d => d.value !== null);
+        const ema9Series = lwChart.addLineSeries({
+            color: '#fbbf24',
+            lineWidth: 1,
+            priceLineVisible: false,
+            lastValueVisible: false
+        });
+        ema9Series.setData(ema9Data);
+
+        // Adicionar EMA 21
+        const ema21Data = calculateEMA(candles, 21).filter(d => d.value !== null);
+        const ema21Series = lwChart.addLineSeries({
+            color: '#f472b6',
+            lineWidth: 1,
+            priceLineVisible: false,
+            lastValueVisible: false
+        });
+        ema21Series.setData(ema21Data);
+
         lwChart.timeScale().fitContent();
 
         chartResizeHandler = () => {
@@ -145,7 +190,7 @@ function renderPriceChart() {
     const deltaPct = firstOpen !== 0 ? (delta / firstOpen) * 100 : 0;
     if (statusEl) {
         statusEl.textContent =
-            `CoinEx · ${candles.length} velas (${tf}) · O→F: ${delta >= 0 ? '+' : ''}${delta.toFixed(6)} (${delta >= 0 ? '+' : ''}${deltaPct.toFixed(2)}%)`;
+            `CoinEx · ${candles.length} velas (${tf}) · O→F: ${delta >= 0 ? '+' : ''}${delta.toFixed(6)} (${delta >= 0 ? '+' : ''}${deltaPct.toFixed(2)}%) · EMA9/21`;
     }
 }
 
@@ -209,6 +254,27 @@ function startAutoUpdate() {
     updateInterval = setInterval(updatePrice, 60000);
 }
 
+async function fetchPositionSignal() {
+    const signalDiv = document.getElementById('positionSignal');
+    const signalText = document.getElementById('positionText');
+    
+    try {
+        const response = await fetch(`${API_BASE}/api/ai/position?timeframe=${currentChartTimeframe}`);
+        const data = await response.json();
+        
+        if (data.success) {
+            signalDiv.style.display = 'flex';
+            signalText.textContent = data.signal;
+            signalText.className = 'position-text ' + data.signal.toLowerCase();
+        } else {
+            signalDiv.style.display = 'none';
+        }
+    } catch (error) {
+        console.error('Erro ao buscar sinal de posição:', error);
+        signalDiv.style.display = 'none';
+    }
+}
+
 async function analyzeHistory() {
     const analysisDiv = document.getElementById('analysis');
     const analysisContent = document.getElementById('analysisContent');
@@ -251,67 +317,16 @@ async function analyzeHistory() {
     try {
         if (btnAi) btnAi.disabled = true;
         analysisDiv.style.display = 'block';
-        mountLoadingUi('Carregando histórico de preços…');
+        mountLoadingUi('Conectando à IA…');
         analysisDiv.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 
-        const history = await fetchPriceHistory(currentChartTimeframe);
-        if (!history || history.length === 0) {
-            analysisContent.innerHTML = '<p>Nenhum dado disponível para análise.</p>';
-            return;
-        }
-
-        setLoadingSub('Montando o prompt e conectando à IA…');
-
-        const prices = history.map((item) => item.price);
-        const currentPrice = prices[0];
-        const oldestPrice = prices[prices.length - 1];
-        const maxPrice = Math.max(...prices);
-        const minPrice = Math.min(...prices);
-        const avgPrice = prices.reduce((a, b) => a + b, 0) / prices.length;
-
-        const prompt = `Analise os seguintes dados de preço da criptomoeda OSMO (Osmosis):
-
-Dados do histórico:
-- Total de registros: ${history.length}
-- Preço atual: ${currentPrice.toFixed(6)}
-- Preço mais antigo: ${oldestPrice.toFixed(6)}
-- Preço máximo: ${maxPrice.toFixed(6)}
-- Preço mínimo: ${minPrice.toFixed(6)}
-- Preço médio: ${avgPrice.toFixed(6)}
-
-Últimos 10 preços: ${prices.slice(0, 10).map((p) => p.toFixed(6)).join(', ')}
-
-Por favor, forneça uma análise detalhada incluindo:
-1. Tendência geral do preço
-2. Volatilidade observada
-3. Pontos de atenção
-4. Recomendações para investidores
-5. Análise técnica básica
-
-Responda em português de forma clara e objetiva.`;
-
-        setLoadingSub('Aguardando o servidor… (stream SSE ativo)');
-
-        const aiResponse = await fetch(`${API_BASE}/api/ai/chat`, {
-            method: 'POST',
+        const aiResponse = await fetch(`${API_BASE}/api/ai/analyze?timeframe=${currentChartTimeframe}`, {
+            method: 'GET',
             headers: {
-                'Content-Type': 'application/json',
                 Accept: 'text/event-stream',
                 'Cache-Control': 'no-cache'
             },
-            cache: 'no-store',
-            body: JSON.stringify({
-                model: 'Qwen/Qwen3-Coder-Next:novita',
-                stream: true,
-                messages: [
-                    {
-                        role: 'system',
-                        content: 'Você é um analista financeiro especializado em criptomoedas. Forneça análises técnicas detalhadas, objetivas e profissionais. Use formatação markdown para organizar suas respostas com títulos, listas e destaques. Seja claro e direto nas suas recomendações.'
-                    },
-                    { role: 'user', content: prompt }
-                ],
-                temperature: 0.7
-            })
+            cache: 'no-store'
         });
 
         if (!aiResponse.ok) {
@@ -323,7 +338,7 @@ Responda em português de forma clara e objetiva.`;
             throw new Error('Resposta da IA sem corpo (streaming indisponível neste navegador?)');
         }
 
-        setLoadingSub('Conectado. Aguardando o primeiro token da resposta…');
+        setLoadingSub('Aguardando o primeiro token da resposta…');
 
         const reader = aiResponse.body.getReader();
         const decoder = new TextDecoder();
@@ -392,8 +407,11 @@ Responda em português de forma clara e objetiva.`;
 
         if (!aiAnalysis.trim()) {
             analysisContent.innerHTML =
-                '<p style="color: #9ca3af;">A IA não devolveu texto. Abra o console (F12) e verifique se o backend está no ar e se o token HuggingFace está configurado.</p>';
+                '<p style="color: #9ca3af;">A IA não devolveu texto. Verifique se o token HuggingFace está configurado no .env</p>';
         }
+
+        // Buscar sinal de posição após análise
+        await fetchPositionSignal();
     } catch (error) {
         analysisContent.innerHTML =
             '<p style="color: #ef4444;">Erro ao gerar análise: ' + (error && error.message ? error.message : String(error)) + '</p>';

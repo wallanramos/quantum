@@ -3,3 +3,5 @@ venv/
 .htaccess
 .iniciar.sh
 .requirements.txt
+__pycache__
+.env

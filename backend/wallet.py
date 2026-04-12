@@ -3,16 +3,22 @@
 Backend de Wallet Osmosis em Python
 API REST para gerenciamento de wallets, swaps e preço OSMO em tempo real
 """
-import os
 import json
 import subprocess
 import threading
 import time
-from datetime import datetime, timezone
-import requests
 
 from flask import Flask, Response, jsonify, request, stream_with_context
 from flask_cors import CORS
+
+from ia import stream_ai_analysis
+from preco import (
+    COINEX_INTERVAL_MAP,
+    fetch_kline_history,
+    get_price_state,
+    update_price,
+    UPDATE_INTERVAL,
+)
 
 app = Flask(__name__)
 CORS(
@@ -24,75 +30,6 @@ CORS(
 )
 
 
-def _read_hf_token_line_from_file(path):
-    """Primeira linha útil: comentários # ignorados; token deve começar com hf_."""
-    try:
-        with open(path, encoding='utf-8') as f:
-            for line in f:
-                s = line.strip()
-                if not s or s.startswith('#'):
-                    continue
-                if s.startswith('hf_'):
-                    return s
-    except OSError:
-        pass
-    return ''
-
-
-def _read_hf_token_from_dotenv(path):
-    """Lê HF_API_TOKEN= ou HUGGINGFACE_HUB_TOKEN= de um arquivo estilo .env."""
-    if not os.path.isfile(path):
-        return ''
-    try:
-        with open(path, encoding='utf-8') as f:
-            for raw in f:
-                line = raw.strip()
-                if not line or line.startswith('#'):
-                    continue
-                for prefix in ('HF_API_TOKEN=', 'HUGGINGFACE_HUB_TOKEN='):
-                    if line.startswith(prefix):
-                        val = line[len(prefix):].strip()
-                        if (val.startswith('"') and val.endswith('"')) or (val.startswith("'") and val.endswith("'")):
-                            val = val[1:-1]
-                        if val.startswith('hf_'):
-                            return val
-    except OSError:
-        pass
-    return ''
-
-
-def hf_token_search_paths():
-    """Caminhos absolutos verificados (para mensagem de erro)."""
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    parent = os.path.dirname(script_dir)
-    out = []
-    for root in (script_dir, parent):
-        for name in ('.env', 'hf_token.txt', '.hf_token'):
-            out.append(os.path.abspath(os.path.join(root, name)))
-    return out
-
-
-def hf_resolve_api_token():
-    """Token HF: variável de ambiente, .env ou hf_token.txt / .hf_token em backend/ e bot/."""
-    for key in ('HF_API_TOKEN', 'HUGGINGFACE_HUB_TOKEN'):
-        t = os.environ.get(key, '').strip()
-        if t:
-            return t
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    parent = os.path.dirname(script_dir)
-    for root in (script_dir, parent):
-        t = _read_hf_token_from_dotenv(os.path.join(root, '.env'))
-        if t:
-            return t
-    for root in (script_dir, parent):
-        for name in ('hf_token.txt', '.hf_token'):
-            path = os.path.join(root, name)
-            t = _read_hf_token_line_from_file(path)
-            if t:
-                return t
-    return ''
-
-
 # Configurações Wallet
 OSMOSISD_PATH = '/usr/local/bin/osmosisd'
 NODE_URL = 'https://rpc.osmosis.zone:443'
@@ -101,29 +38,6 @@ CHAIN_ID = 'osmosis-1'
 # Mapeamento de chaves
 KEY_MAPPING = {
     'osmo1sp8se0r87nwwwk9xz0fhg6963lgu86mes6he88': 'wallet_osmo1sp8'
-}
-
-# Configurações Preço
-COINEX_MARKET = 'OSMOUSDT'
-COINEX_KLINE_LIMIT = 200
-COINEX_INTERVAL_MAP = {
-    '1m':  '1min',
-    '15m': '15min',
-    '1h':  '1hour',
-    '4h':  '4hour',
-    '1d':  '1day',
-}
-UPDATE_INTERVAL = 1  # segundos
-
-# Estado global do preço
-_price_state = {
-    'price': None,
-    'timestamp': None,
-    'error': None,
-    'updating': False,
-    'last_update': None,
-    'update_count': 0,
-    'method': None,
 }
 
 
@@ -142,54 +56,6 @@ def run_command(command):
         return None, "Timeout", 1
     except Exception as e:
         return None, str(e), 1
-
-
-# ==================== FUNÇÕES DE PREÇO ====================
-
-def update_price():
-    """Atualiza o preço OSMO via ticker da CoinEx."""
-    global _price_state
-
-    _price_state['updating'] = True
-
-    try:
-        url = f'https://api.coinex.com/v2/spot/ticker?market={COINEX_MARKET}'
-        resp = requests.get(url, timeout=10, headers={'Accept': 'application/json'})
-        resp.raise_for_status()
-        data = resp.json()
-
-        if data.get('code') != 0 or not isinstance(data.get('data'), list) or not data['data']:
-            _price_state['error'] = f'CoinEx ticker erro: {data.get("message", "resposta inválida")}'
-            return
-
-        price = float(data['data'][0]['last'])
-        if not price or price <= 0:
-            _price_state['error'] = 'CoinEx: preço inválido recebido'
-            return
-
-        _price_state['price'] = price
-        _price_state['method'] = 'coinex_ticker'
-        _price_state['timestamp'] = datetime.now(timezone.utc).isoformat()
-        _price_state['error'] = None
-        _price_state['last_update'] = time.time()
-        _price_state['update_count'] += 1
-
-    except requests.RequestException as e:
-        _price_state['error'] = f'Erro ao acessar CoinEx: {str(e)}'
-    except Exception as e:
-        _price_state['error'] = f'Erro inesperado: {str(e)}'
-    finally:
-        _price_state['updating'] = False
-
-
-def price_updater_thread():
-    """Thread que atualiza o preço continuamente"""
-    while True:
-        try:
-            update_price()
-        except Exception:
-            pass
-        time.sleep(UPDATE_INTERVAL)
 
 
 # ==================== FUNÇÕES DE WALLET ====================
@@ -317,13 +183,14 @@ def execute_swap(key_name, from_token, to_token, amount):
 @app.route('/api/health', methods=['GET'])
 def health():
     """Health check"""
-    uptime = time.time() - _price_state['last_update'] if _price_state.get('last_update') else None
+    state = get_price_state()
+    uptime = time.time() - state['last_update'] if state.get('last_update') else None
     return jsonify({
         'status': 'ok',
         'service': 'wallet-backend',
-        'price_available': _price_state['price'] is not None,
-        'price_update_count': _price_state['update_count'],
-        'price_last_update': _price_state['timestamp'],
+        'price_available': state['price'] is not None,
+        'price_update_count': state['update_count'],
+        'price_last_update': state['timestamp'],
         'uptime_seconds': uptime
     })
 
@@ -331,18 +198,19 @@ def health():
 @app.route('/api/price', methods=['GET'])
 def api_get_price():
     """Retorna o preço atual do OSMO"""
-    if _price_state['price'] is None:
+    state = get_price_state()
+    if state['price'] is None:
         return jsonify({
             'success': False,
-            'error': _price_state['error'] or 'Preço ainda não disponível'
+            'error': state['error'] or 'Preço ainda não disponível'
         }), 503
 
     return jsonify({
         'success': True,
-        'price': _price_state['price'],
-        'timestamp': _price_state['timestamp'],
-        'method': _price_state['method'],
-        'update_count': _price_state['update_count'],
+        'price': state['price'],
+        'timestamp': state['timestamp'],
+        'method': state['method'],
+        'update_count': state['update_count'],
     })
 
 
@@ -377,62 +245,12 @@ def api_get_history():
     Parâmetro opcional: ?timeframe=1m|15m|1h|4h|1d (padrão: 15m)
     """
     timeframe = request.args.get('timeframe', '15m')
-    if timeframe not in COINEX_INTERVAL_MAP:
-        return jsonify({'success': False, 'error': f'Timeframe inválido. Use: {list(COINEX_INTERVAL_MAP.keys())}'}), 400
-
-    interval = COINEX_INTERVAL_MAP[timeframe]
-    url = (
-        f'https://api.coinex.com/v2/spot/kline'
-        f'?market={COINEX_MARKET}&period={interval}&limit={COINEX_KLINE_LIMIT}'
-    )
-    try:
-        resp = requests.get(url, timeout=10, headers={'Accept': 'application/json'})
-        resp.raise_for_status()
-        data = resp.json()
-
-        if data.get('code') != 0 or not isinstance(data.get('data'), list):
-            return jsonify({'success': False, 'error': f'CoinEx erro: {data.get("message", "resposta inválida")}'}), 502
-
-        history = []
-        for k in data['data']:
-            try:
-                if isinstance(k, dict):
-                    ts_ms = int(k.get('created_at', k.get('timestamp', 0)))
-                    o = float(k['open'])
-                    h = float(k['high'])
-                    l = float(k['low'])
-                    c = float(k['close'])
-                    vol = float(k.get('volume', 0))
-                else:
-                    ts_ms = int(k[0])
-                    o = float(k[1])
-                    c = float(k[2])
-                    h = float(k[3])
-                    l = float(k[4])
-                    vol = float(k[5])
-
-                if ts_ms <= 0 or c <= 0:
-                    continue
-
-                history.append({
-                    'price': c,
-                    'open': o,
-                    'high': h,
-                    'low': l,
-                    'close': c,
-                    'volume': vol,
-                    'timestamp': datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc).isoformat(),
-                    'currency': 'USD',
-                    'source': 'coinex',
-                })
-            except (KeyError, IndexError, ValueError, TypeError):
-                continue
-
-        history.reverse()
-        return jsonify({'success': True, 'history': history})
-
-    except requests.RequestException as e:
-        return jsonify({'success': False, 'error': f'Erro ao acessar CoinEx: {str(e)}'}), 502
+    result = fetch_kline_history(timeframe)
+    
+    if not result['success']:
+        return jsonify(result), 400 if 'inválido' in result.get('error', '') else 502
+    
+    return jsonify(result)
 
 
 @app.route('/api/swap/simulate', methods=['POST'])
@@ -465,6 +283,42 @@ def api_execute_swap():
     return jsonify(execute_swap(key_name, from_token, to_token, amount))
 
 
+@app.route('/api/ai/position', methods=['GET', 'OPTIONS'])
+def api_ai_position():
+    """Retorna sinal de posição baseado em EMA."""
+    if request.method == 'OPTIONS':
+        return ('', 204)
+
+    from ia import get_position_signal
+    timeframe = request.args.get('timeframe', '1h')
+    
+    result, error = get_position_signal(timeframe)
+    
+    if error:
+        return jsonify({'success': False, 'error': error}), 400
+    
+    return jsonify({'success': True, **result})
+
+
+@app.route('/api/ai/analyze', methods=['GET', 'OPTIONS'])
+def api_ai_analyze():
+    """Análise de mercado com IA via streaming SSE."""
+    if request.method == 'OPTIONS':
+        return ('', 204)
+
+    timeframe = request.args.get('timeframe', '15m')
+    
+    resp = Response(
+        stream_with_context(stream_ai_analysis(timeframe)),
+        mimetype='text/event-stream; charset=utf-8',
+    )
+    resp.headers['Cache-Control'] = 'no-cache'
+    resp.headers['X-Accel-Buffering'] = 'no'
+    resp.headers['Access-Control-Allow-Origin'] = '*'
+    resp.headers['Access-Control-Allow-Headers'] = '*'
+    return resp
+
+
 @app.route('/api/ai/chat', methods=['POST', 'OPTIONS'])
 def api_ai_chat():
     """Proxy streaming para Hugging Face."""
@@ -473,13 +327,10 @@ def api_ai_chat():
 
     token = hf_resolve_api_token()
     if not token:
-        checked = '; '.join(hf_token_search_paths())
         return jsonify({
             'error': (
-                'Chave Hugging Face não encontrada. Opções: (1) export HF_API_TOKEN=hf_... antes de iniciar o '
-                'wallet.py; (2) arquivo backend/.env com linha HF_API_TOKEN=hf_...; '
-                '(3) arquivo backend/hf_token.txt com uma linha hf_... '
-                f'Arquivos verificados: {checked}'
+                'Chave Hugging Face não encontrada. Crie um arquivo .env em backend/ ou na raiz com: '
+                'HF_API_TOKEN=hf_... ou export HF_API_TOKEN=hf_... antes de iniciar o servidor.'
             ),
         }), 503
 
@@ -533,6 +384,16 @@ def api_ai_chat():
 
 
 # ==================== INICIALIZAÇÃO ====================
+
+def price_updater_thread():
+    """Thread que atualiza o preço continuamente"""
+    while True:
+        try:
+            update_price()
+        except Exception:
+            pass
+        time.sleep(UPDATE_INTERVAL)
+
 
 if __name__ == '__main__':
     price_thread = threading.Thread(target=price_updater_thread, daemon=True)
