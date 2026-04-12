@@ -11,19 +11,6 @@ const CHART_RANGE_MS = {
     '1h': 60 * 60 * 1000
 };
 
-/** Tamanho de cada vela (ms) conforme o período do gráfico */
-const CANDLE_BUCKET_MS = {
-    '1m': 10 * 1000,
-    '15m': 60 * 1000,
-    '1h': 5 * 60 * 1000
-};
-
-const CANDLE_BUCKET_LABEL = {
-    '1m': '10s',
-    '15m': '1 min',
-    '1h': '5 min'
-};
-
 const API_BASE = `${window.location.protocol}//${window.location.hostname}:5000`;
 
 async function fetchPriceHistory(timeframe) {
@@ -62,7 +49,6 @@ function setPriceChartTimeframe(tf) {
     refreshPriceChart();
 }
 
-/** Converte rawPriceHistory (items com open/high/low/close/timestamp) em candles para LightweightCharts */
 function buildCandles(items) {
     return items
         .map((item) => {
@@ -168,25 +154,19 @@ async function refreshPriceChart() {
     renderPriceChart();
 }
 
-// Função auxiliar para fazer fetch com tratamento de erros
 async function safeFetch(url, options = {}) {
     let response;
-
     try {
         response = await fetch(url, options);
     } catch (error) {
-        // Falha de rede: backend offline ou CORS bloqueando
         throw new Error('Backend não está rodando. Execute: python3 backend/wallet.py');
     }
 
-    // Lê o corpo como texto primeiro para poder inspecionar em caso de erro
     const text = await response.text();
-
     let data;
     try {
         data = JSON.parse(text);
     } catch (_) {
-        // O servidor respondeu mas não é JSON válido (ex: página de erro HTML do Flask)
         const preview = text.substring(0, 120).replace(/\n/g, ' ');
         throw new Error(`Resposta inválida do servidor (não é JSON). Status ${response.status}. Início da resposta: ${preview}`);
     }
@@ -194,19 +174,11 @@ async function safeFetch(url, options = {}) {
     return { ok: response.ok, status: response.status, data };
 }
 
-// Função para buscar o preço do OSMO via backend Python (atualização em tempo real)
 async function fetchOsmoPrice() {
     try {
         const { ok, data } = await safeFetch(`${API_BASE}/api/price`);
-        
-        if (!ok) {
-            throw new Error('Backend não está respondendo. Inicie o servidor: python3 backend/wallet.py');
-        }
-        
-        if (!data.success) {
-            throw new Error(data.error || 'Erro ao buscar preço');
-        }
-        
+        if (!ok) throw new Error('Backend não está respondendo. Inicie o servidor: python3 backend/wallet.py');
+        if (!data.success) throw new Error(data.error || 'Erro ao buscar preço');
         return data.price;
     } catch (error) {
         console.error('Erro ao buscar preço:', error);
@@ -214,15 +186,13 @@ async function fetchOsmoPrice() {
     }
 }
 
-// Função para atualizar o preço na interface
 async function updatePrice() {
     const priceElement = document.getElementById('price');
     const statusElement = document.getElementById('status');
-    
+
     try {
         priceElement.textContent = '...';
         statusElement.textContent = 'Carregando...';
-        
         const price = await fetchOsmoPrice();
         priceElement.textContent = price.toFixed(4);
         statusElement.textContent = `Atualizado em: ${new Date().toLocaleString('pt-BR')}`;
@@ -233,17 +203,12 @@ async function updatePrice() {
     }
 }
 
-// Iniciar atualização automática
 function startAutoUpdate() {
-    if (updateInterval) {
-        clearInterval(updateInterval);
-    }
-    
-    updatePrice(); // Atualiza imediatamente
-    updateInterval = setInterval(updatePrice, 60000); // Atualiza a cada 1 minuto
+    if (updateInterval) clearInterval(updateInterval);
+    updatePrice();
+    updateInterval = setInterval(updatePrice, 60000);
 }
 
-// Função para analisar o histórico com IA (loading até o 1º token; resposta em stream SSE)
 async function analyzeHistory() {
     const analysisDiv = document.getElementById('analysis');
     const analysisContent = document.getElementById('analysisContent');
@@ -266,43 +231,30 @@ async function analyzeHistory() {
 
     function setLoadingSub(text) {
         const el = document.getElementById('aiLoadingSub');
-        if (el) {
-            el.textContent = text;
-        }
+        if (el) el.textContent = text;
     }
 
     function revealStreamUi() {
         const loadEl = document.getElementById('aiLoadingState');
         const wrapEl = document.getElementById('aiStreamWrap');
-        if (loadEl) {
-            loadEl.style.display = 'none';
-        }
-        if (wrapEl) {
-            wrapEl.style.display = 'block';
-        }
+        if (loadEl) loadEl.style.display = 'none';
+        if (wrapEl) wrapEl.style.display = 'block';
     }
 
     function markStreamDone() {
         const badge = document.getElementById('aiStreamBadge');
         const badgeText = document.getElementById('aiStreamBadgeText');
-        if (badge) {
-            badge.classList.add('done');
-        }
-        if (badgeText) {
-            badgeText.textContent = 'Resposta concluída';
-        }
+        if (badge) badge.classList.add('done');
+        if (badgeText) badgeText.textContent = 'Resposta concluída';
     }
 
     try {
-        if (btnAi) {
-            btnAi.disabled = true;
-        }
+        if (btnAi) btnAi.disabled = true;
         analysisDiv.style.display = 'block';
         mountLoadingUi('Carregando histórico de preços…');
         analysisDiv.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 
         const history = await fetchPriceHistory(currentChartTimeframe);
-
         if (!history || history.length === 0) {
             analysisContent.innerHTML = '<p>Nenhum dado disponível para análise.</p>';
             return;
@@ -354,13 +306,9 @@ Responda em português de forma clara e objetiva.`;
                 messages: [
                     {
                         role: 'system',
-                        content:
-                            'Você é um analista financeiro especializado em criptomoedas. Forneça análises técnicas detalhadas, objetivas e profissionais. Use formatação markdown para organizar suas respostas com títulos, listas e destaques. Seja claro e direto nas suas recomendações.'
+                        content: 'Você é um analista financeiro especializado em criptomoedas. Forneça análises técnicas detalhadas, objetivas e profissionais. Use formatação markdown para organizar suas respostas com títulos, listas e destaques. Seja claro e direto nas suas recomendações.'
                     },
-                    {
-                        role: 'user',
-                        content: prompt
-                    }
+                    { role: 'user', content: prompt }
                 ],
                 temperature: 0.7
             })
@@ -382,13 +330,10 @@ Responda em português de forma clara e objetiva.`;
         let aiAnalysis = '';
         let sseBuffer = '';
         let firstTokenReceived = false;
-
         const aiResponseDiv = document.getElementById('aiStreamBody');
 
         function parseSseDataPayload(dataStr) {
-            if (dataStr === '[DONE]') {
-                return;
-            }
+            if (dataStr === '[DONE]') return;
             let json;
             try {
                 json = JSON.parse(dataStr);
@@ -396,16 +341,10 @@ Responda em português de forma clara e objetiva.`;
                 return;
             }
             if (json.error) {
-                const msg =
-                    typeof json.error === 'string'
-                        ? json.error
-                        : json.error.message || JSON.stringify(json.error);
+                const msg = typeof json.error === 'string' ? json.error : json.error.message || JSON.stringify(json.error);
                 throw new Error(msg + (json.code ? ' (código ' + json.code + ')' : ''));
             }
-            const content =
-                json.choices && json.choices[0] && json.choices[0].delta
-                    ? json.choices[0].delta.content || ''
-                    : '';
+            const content = json.choices && json.choices[0] && json.choices[0].delta ? json.choices[0].delta.content || '' : '';
             if (content) {
                 if (!firstTokenReceived) {
                     firstTokenReceived = true;
@@ -431,13 +370,9 @@ Responda em português de forma clara e objetiva.`;
 
             for (let line of lines2) {
                 line = line.replace(/\r$/, '');
-                if (!line.startsWith('data: ')) {
-                    continue;
-                }
+                if (!line.startsWith('data: ')) continue;
                 const data = line.slice(6).trim();
-                if (!data) {
-                    continue;
-                }
+                if (!data) continue;
                 parseSseDataPayload(data);
             }
 
@@ -446,106 +381,74 @@ Responda em português de forma clara e objetiva.`;
                     const lastLine = sseBuffer.replace(/\r$/, '');
                     if (lastLine.startsWith('data: ')) {
                         const data = lastLine.slice(6).trim();
-                        if (data) {
-                            parseSseDataPayload(data);
-                        }
+                        if (data) parseSseDataPayload(data);
                     }
                 }
                 break;
             }
         }
 
-        if (firstTokenReceived) {
-            markStreamDone();
-        }
+        if (firstTokenReceived) markStreamDone();
 
         if (!aiAnalysis.trim()) {
             analysisContent.innerHTML =
-                '<p style="color: #9ca3af;">A IA não devolveu texto. Abra o console (F12), confira se o backend em <code>' +
-                API_BASE +
-                '</code> está no ar e se <code>HF_API_TOKEN</code> ou <code>backend/hf_token.txt</code> está configurado.</p>';
+                '<p style="color: #9ca3af;">A IA não devolveu texto. Abra o console (F12) e verifique se o backend está no ar e se o token HuggingFace está configurado.</p>';
         }
     } catch (error) {
         analysisContent.innerHTML =
-            '<p style="color: #ef4444;">Erro ao gerar análise: ' +
-            (error && error.message ? error.message : String(error)) +
-            '</p><p style="color:#6b7280;font-size:0.85rem;margin-top:8px;">Dica: o backend Python precisa estar em <code>' +
-            API_BASE +
-            '</code> com <code>HF_API_TOKEN</code> ou <code>backend/hf_token.txt</code>.</p>';
+            '<p style="color: #ef4444;">Erro ao gerar análise: ' + (error && error.message ? error.message : String(error)) + '</p>';
     } finally {
-        if (btnAi) {
-            btnAi.disabled = false;
-        }
+        if (btnAi) btnAi.disabled = false;
     }
 }
 
-// Função para carregar lista de carteiras
 async function loadWallets() {
     const walletSelect = document.getElementById('walletSelect');
-    
     try {
         const { ok, data } = await safeFetch(`${API_BASE}/api/wallets`);
-        
         if (!ok) {
-            console.error('Backend não está respondendo');
             walletSelect.innerHTML = '<option value="">Backend offline</option>';
             return;
         }
-        
-        if (!data.success) {
-            console.error('Erro ao carregar carteiras:', data.error);
-            return;
-        }
-        
-        // Limpa e adiciona as opções
+        if (!data.success) return;
+
         walletSelect.innerHTML = '<option value="">-- Selecione --</option>';
-        
         data.wallets.forEach(wallet => {
             const option = document.createElement('option');
             option.value = wallet.address;
             option.textContent = `${wallet.name} (${wallet.address.substring(0, 12)}...)`;
             walletSelect.appendChild(option);
         });
-        
     } catch (error) {
         console.error('Erro ao carregar carteiras:', error);
         walletSelect.innerHTML = '<option value="">Backend offline - Execute: python3 backend/wallet.py</option>';
     }
 }
 
-// Função para carregar saldos da wallet
 async function loadBalances() {
     const walletSelect = document.getElementById('walletSelect');
     const selectedAddress = walletSelect.value;
-    
-    if (!selectedAddress) {
-        return;
-    }
-    
+    if (!selectedAddress) return;
+
     const balancesDiv = document.getElementById('balances');
     const addressDiv = document.getElementById('walletAddress');
-    
+
     try {
         balancesDiv.innerHTML = '<div style="text-align: center; padding: 20px;"><div class="loader"></div></div>';
-        
         const { ok, data } = await safeFetch(`${API_BASE}/api/balance/${selectedAddress}`);
-        
+
         if (!ok || !data.success) {
             balancesDiv.innerHTML = `<p style="color: #ef4444; text-align: center;">Erro: ${data?.error || 'Erro ao carregar saldos'}</p>`;
             return;
         }
-        
-        // Mostra o endereço
+
         addressDiv.textContent = data.address;
-        
-        // Mostra os saldos
+
         if (data.balances && data.balances.length > 0) {
             let html = '';
             data.balances.forEach(balance => {
                 let denom = balance.denom;
                 let displayDenom = denom;
-                
-                // Formata o nome do token
                 if (denom === 'uosmo') {
                     displayDenom = 'OSMO';
                 } else if (denom.startsWith('ibc/')) {
@@ -555,27 +458,23 @@ async function loadBalances() {
                 } else {
                     displayDenom = denom.substring(0, 20);
                 }
-                
                 const amount = (parseInt(balance.amount) / 1000000).toFixed(6);
                 html += `
                     <div class="balance-item">
                         <span class="balance-denom" title="${denom}">${displayDenom}</span>
                         <span class="balance-amount">${amount}</span>
-                    </div>
-                `;
+                    </div>`;
             });
             balancesDiv.innerHTML = html;
         } else {
             balancesDiv.innerHTML = '<p style="color: #9ca3af; text-align: center;">Nenhum saldo encontrado</p>';
         }
-        
     } catch (error) {
         console.error('Erro ao carregar saldos:', error);
         balancesDiv.innerHTML = `<p style="color: #ef4444; text-align: center;">Erro: ${error.message}</p>`;
     }
 }
 
-// Função para simular swap
 async function simulateSwap() {
     const fromToken = document.getElementById('swapFrom').value;
     const toToken = document.getElementById('swapTo').value;
@@ -583,28 +482,26 @@ async function simulateSwap() {
     const statusDiv = document.getElementById('swapStatus');
     const estimateDiv = document.getElementById('swapEstimate');
     const outputDiv = document.getElementById('swapOutput');
-    
+
     if (!amount || parseFloat(amount) <= 0) {
         statusDiv.textContent = 'Digite uma quantidade válida';
         statusDiv.style.color = '#ef4444';
         return;
     }
-    
+
     try {
         statusDiv.textContent = 'Simulando...';
         statusDiv.style.color = '#9ca3af';
         estimateDiv.style.display = 'none';
-        
-        // Converte para microunits (1 token = 1,000,000 micro)
+
         const amountMicro = Math.floor(parseFloat(amount) * 1000000);
-        
         const response = await fetch(`${API_BASE}/api/swap/simulate`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ from: fromToken, to: toToken, amount: amountMicro })
         });
         const data = await response.json();
-        
+
         if (data.success) {
             const outputAmount = (parseInt(data.token_out_amount) / 1000000).toFixed(6);
             outputDiv.textContent = outputAmount + ' ' + (toToken === 'uosmo' ? 'OSMO' : 'USDC');
@@ -615,7 +512,6 @@ async function simulateSwap() {
             statusDiv.textContent = 'Erro: ' + data.error;
             statusDiv.style.color = '#ef4444';
         }
-        
     } catch (error) {
         console.error('Erro ao simular swap:', error);
         statusDiv.textContent = 'Erro ao simular: ' + error.message;
@@ -623,7 +519,6 @@ async function simulateSwap() {
     }
 }
 
-// Função para executar swap
 async function executeSwap() {
     const fromToken = document.getElementById('swapFrom').value;
     const toToken = document.getElementById('swapTo').value;
@@ -631,51 +526,41 @@ async function executeSwap() {
     const walletSelect = document.getElementById('walletSelect');
     const selectedAddress = walletSelect.value;
     const statusDiv = document.getElementById('swapStatus');
-    
+
     if (!amount || parseFloat(amount) <= 0) {
         statusDiv.textContent = 'Digite uma quantidade válida';
         statusDiv.style.color = '#ef4444';
         return;
     }
-    
+
     if (!selectedAddress) {
         statusDiv.textContent = 'Selecione uma carteira primeiro';
         statusDiv.style.color = '#ef4444';
         return;
     }
-    
-    if (!confirm(`Confirma o swap de ${amount} ${fromToken === 'uosmo' ? 'OSMO' : 'USDC'}?`)) {
-        return;
-    }
-    
+
+    if (!confirm(`Confirma o swap de ${amount} ${fromToken === 'uosmo' ? 'OSMO' : 'USDC'}?`)) return;
+
     try {
         statusDiv.textContent = 'Executando swap...';
         statusDiv.style.color = '#9ca3af';
-        
+
         const amountMicro = Math.floor(parseFloat(amount) * 1000000);
-        
         const response = await fetch(`${API_BASE}/api/swap/execute`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ 
-                from: fromToken, 
-                to: toToken, 
-                amount: amountMicro,
-                address: selectedAddress
-            })
+            body: JSON.stringify({ from: fromToken, to: toToken, amount: amountMicro, address: selectedAddress })
         });
         const data = await response.json();
-        
+
         if (data.success) {
             statusDiv.textContent = 'Swap executado com sucesso!';
             statusDiv.style.color = '#10b981';
-            // Atualiza os saldos
             setTimeout(loadBalances, 2000);
         } else {
             statusDiv.textContent = 'Erro: ' + data.error;
             statusDiv.style.color = '#ef4444';
         }
-        
     } catch (error) {
         console.error('Erro ao executar swap:', error);
         statusDiv.textContent = 'Erro ao executar: ' + error.message;
@@ -683,205 +568,6 @@ async function executeSwap() {
     }
 }
 
-// Registrar Service Worker para PWA
-if ('serviceWorker' in navigator) {
-    window.addEventListener('load', () => {
-        navigator.serviceWorker.register('/sw.js')
-            .then((registration) => {
-                console.log('Service Worker registrado:', registration.scope);
-            })
-            .catch((error) => {
-                console.log('Falha ao registrar Service Worker:', error);
-            });
-    });
-}
-
-// Função para mostrar o popup manualmente
-function showInstallPopup() {
-    const installPopup = document.getElementById('installPopup');
-    if (installPopup) {
-        installPopup.classList.add('show');
-    }
-}
-
-// PWA Install Prompt
-let deferredPrompt;
-const installPrompt = document.getElementById('installPrompt');
-const installBtn = document.getElementById('installBtn');
-const installClose = document.getElementById('installClose');
-const installPopup = document.getElementById('installPopup');
-const popupInstallBtn = document.getElementById('popupInstallBtn');
-const popupCloseBtn = document.getElementById('popupCloseBtn');
-
-window.addEventListener('beforeinstallprompt', (e) => {
-    e.preventDefault();
-    deferredPrompt = e;
-    console.log('beforeinstallprompt disparado');
-    
-    // Verifica se já foi instalado ou se o usuário já recusou
-    const hasDeclined = localStorage.getItem('pwa-declined');
-    const isInstalled = localStorage.getItem('pwa-installed');
-    
-    console.log('hasDeclined:', hasDeclined, 'isInstalled:', isInstalled);
-    
-    if (!hasDeclined && !isInstalled) {
-        // Mostra o popup após 5 segundos
-        setTimeout(() => {
-            console.log('Mostrando popup de instalação');
-            if (installPopup) {
-                installPopup.classList.add('show');
-            }
-        }, 5000);
-    }
-});
-
-// Verifica se já está instalado
-if (window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true) {
-    console.log('App já está instalado e rodando em modo standalone');
-    localStorage.setItem('pwa-installed', 'true');
-    // Esconde o botão de instalação se estiver em modo app
-    const installHeader = document.querySelector('.header .btn');
-    if (installHeader) {
-        installHeader.style.display = 'none';
-    }
-} else {
-    console.log('App não está instalado ou rodando no navegador');
-    // Detecta Firefox
-    const isFirefox = navigator.userAgent.toLowerCase().indexOf('firefox') > -1;
-    console.log('Firefox detectado:', isFirefox);
-    
-    // Mostra o popup após 3 segundos se não estiver instalado
-    setTimeout(() => {
-        const hasDeclined = localStorage.getItem('pwa-declined');
-        const isInstalled = localStorage.getItem('pwa-installed');
-        if (!hasDeclined && !isInstalled) {
-            console.log('Mostrando popup (fallback)');
-            showInstallPopup();
-        }
-    }, 3000);
-}
-
-// Botão do popup
-if (popupInstallBtn) {
-    popupInstallBtn.addEventListener('click', async () => {
-        console.log('Botão de instalação clicado');
-        
-        const isFirefox = navigator.userAgent.toLowerCase().indexOf('firefox') > -1;
-        const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
-        
-        if (!deferredPrompt) {
-            console.log('Sem deferredPrompt, mostrando instruções');
-            
-            if (isFirefox) {
-                // Instruções específicas para Firefox
-                const msg = `Para instalar no Firefox:\n\n` +
-                    `Desktop:\n` +
-                    `1. Clique no ícone de três linhas (☰) no canto superior direito\n` +
-                    `2. Clique em "Instalar"\n` +
-                    `   ou\n` +
-                    `3. Clique no ícone de instalação (⊕) na barra de endereço\n\n` +
-                    `Android:\n` +
-                    `1. Toque no menu (⋮)\n` +
-                    `2. Toque em "Instalar"\n` +
-                    `3. Confirme a instalação`;
-                alert(msg);
-            } else if (isIOS) {
-                alert('Para instalar no iOS:\n\n1. Toque no botão Compartilhar (□↑)\n2. Role para baixo\n3. Toque em "Adicionar à Tela Inicial"');
-            } else {
-                alert('Para instalar:\n\n• Chrome/Edge: Menu (⋮) → Instalar quantum\n• Ou clique no ícone de instalação na barra de endereço');
-            }
-            
-            // Fecha o popup após mostrar instruções
-            if (installPopup) {
-                installPopup.classList.remove('show');
-            }
-            return;
-        }
-        
-        deferredPrompt.prompt();
-        const { outcome } = await deferredPrompt.userChoice;
-        
-        console.log(`Usuário ${outcome === 'accepted' ? 'aceitou' : 'recusou'} a instalação`);
-        
-        if (outcome === 'accepted') {
-            localStorage.setItem('pwa-installed', 'true');
-        } else {
-            localStorage.setItem('pwa-declined', 'true');
-        }
-        
-        deferredPrompt = null;
-        if (installPopup) {
-            installPopup.classList.remove('show');
-        }
-    });
-}
-
-// Fechar popup
-if (popupCloseBtn) {
-    popupCloseBtn.addEventListener('click', () => {
-        console.log('Popup fechado');
-        if (installPopup) {
-            installPopup.classList.remove('show');
-        }
-        localStorage.setItem('pwa-declined', 'true');
-    });
-}
-
-// Fechar popup clicando fora
-if (installPopup) {
-    installPopup.addEventListener('click', (e) => {
-        if (e.target === installPopup) {
-            console.log('Popup fechado (clique fora)');
-            installPopup.classList.remove('show');
-            localStorage.setItem('pwa-declined', 'true');
-        }
-    });
-}
-
-// Botão do banner pequeno
-if (installBtn) {
-    installBtn.addEventListener('click', async () => {
-        if (!deferredPrompt) {
-            // Mostra o popup se não houver prompt
-            if (installPopup) {
-                installPopup.classList.add('show');
-            }
-            return;
-        }
-        
-        deferredPrompt.prompt();
-        const { outcome } = await deferredPrompt.userChoice;
-        
-        console.log(`Usuário ${outcome === 'accepted' ? 'aceitou' : 'recusou'} a instalação`);
-        
-        deferredPrompt = null;
-        if (installPrompt) {
-            installPrompt.classList.remove('show');
-        }
-    });
-}
-
-if (installClose) {
-    installClose.addEventListener('click', () => {
-        if (installPrompt) {
-            installPrompt.classList.remove('show');
-        }
-    });
-}
-
-window.addEventListener('appinstalled', () => {
-    console.log('PWA instalado com sucesso!');
-    localStorage.setItem('pwa-installed', 'true');
-    deferredPrompt = null;
-    if (installPrompt) {
-        installPrompt.classList.remove('show');
-    }
-    if (installPopup) {
-        installPopup.classList.remove('show');
-    }
-});
-
-// Inicialização ao carregar a página
 window.addEventListener('load', () => {
     startAutoUpdate();
     loadWallets();
@@ -890,7 +576,5 @@ window.addEventListener('load', () => {
 });
 
 window.addEventListener('beforeunload', () => {
-    if (chartRefreshTimer) {
-        clearInterval(chartRefreshTimer);
-    }
+    if (chartRefreshTimer) clearInterval(chartRefreshTimer);
 });
