@@ -4,6 +4,7 @@ let chartResizeHandler = null;
 let rawPriceHistory = [];
 let currentChartTimeframe = '1h';
 let chartRefreshTimer = null;
+let chartExpanded = true;
 
 const CHART_RANGE_MS = {
     '1m': 60 * 1000,
@@ -12,9 +13,46 @@ const CHART_RANGE_MS = {
 };
 
 const API_BASE = `${window.location.protocol}//${window.location.hostname}:5000`;
+const STORAGE_KEY_WALLET = 'quantum_selected_wallet';
+const STORAGE_KEY_CHART_EXPANDED = 'quantum_chart_expanded';
+
+function toggleChart(event) {
+    // Se clicou em um botão de timeframe, não faz nada
+    if (event && event.target.closest('.timeframe-btn')) {
+        return;
+    }
+    
+    const content = document.getElementById('chartContent');
+    const timeframes = document.getElementById('chartTimeframes');
+    const caret = document.getElementById('chartToggleIcon');
+    const header = document.querySelector('.chart-header');
+    
+    chartExpanded = !chartExpanded;
+    localStorage.setItem(STORAGE_KEY_CHART_EXPANDED, chartExpanded);
+    
+    if (chartExpanded) {
+        content.classList.remove('collapsed');
+        timeframes.style.display = 'flex';
+        if (caret) caret.classList.remove('collapsed');
+        if (header) header.classList.remove('collapsed');
+        // Aguarda a animação antes de redesenhar
+        setTimeout(() => {
+            if (lwChart) {
+                lwChart.applyOptions({ 
+                    width: document.getElementById('priceChartContainer').clientWidth || 800 
+                });
+            }
+        }, 300);
+    } else {
+        content.classList.add('collapsed');
+        timeframes.style.display = 'none';
+        if (caret) caret.classList.add('collapsed');
+        if (header) header.classList.add('collapsed');
+    }
+}
 
 async function fetchPriceHistory(timeframe) {
-    const tf = timeframe || currentChartTimeframe || '15m';
+    const tf = timeframe || currentChartTimeframe || '1h';
     try {
         const res = await fetch(`${API_BASE}/api/history?timeframe=${tf}`);
         if (res.ok) {
@@ -68,22 +106,16 @@ function buildCandles(items) {
 function calculateEMA(candles, period) {
     const ema = [];
     const multiplier = 2 / (period + 1);
-    
     for (let i = 0; i < candles.length; i++) {
         if (i < period - 1) {
             ema.push({ time: candles[i].time, value: null });
         } else if (i === period - 1) {
-            // SMA inicial
             let sum = 0;
-            for (let j = 0; j < period; j++) {
-                sum += candles[j].close;
-            }
+            for (let j = 0; j < period; j++) sum += candles[j].close;
             ema.push({ time: candles[i].time, value: sum / period });
         } else {
-            // EMA = (Preço atual × multiplicador) + (EMA anterior × (1 - multiplicador))
             const prevEma = ema[i - 1].value;
-            const newEma = (candles[i].close * multiplier) + (prevEma * (1 - multiplier));
-            ema.push({ time: candles[i].time, value: newEma });
+            ema.push({ time: candles[i].time, value: (candles[i].close * multiplier) + (prevEma * (1 - multiplier)) });
         }
     }
     return ema;
@@ -149,24 +181,12 @@ function renderPriceChart() {
         });
         series.setData(candles);
 
-        // Adicionar EMA 9
         const ema9Data = calculateEMA(candles, 9).filter(d => d.value !== null);
-        const ema9Series = lwChart.addLineSeries({
-            color: '#fbbf24',
-            lineWidth: 1,
-            priceLineVisible: false,
-            lastValueVisible: false
-        });
+        const ema9Series = lwChart.addLineSeries({ color: '#fbbf24', lineWidth: 1, priceLineVisible: false, lastValueVisible: false });
         ema9Series.setData(ema9Data);
 
-        // Adicionar EMA 21
         const ema21Data = calculateEMA(candles, 21).filter(d => d.value !== null);
-        const ema21Series = lwChart.addLineSeries({
-            color: '#f472b6',
-            lineWidth: 1,
-            priceLineVisible: false,
-            lastValueVisible: false
-        });
+        const ema21Series = lwChart.addLineSeries({ color: '#f472b6', lineWidth: 1, priceLineVisible: false, lastValueVisible: false });
         ema21Series.setData(ema21Data);
 
         lwChart.timeScale().fitContent();
@@ -213,22 +233,17 @@ async function safeFetch(url, options = {}) {
         data = JSON.parse(text);
     } catch (_) {
         const preview = text.substring(0, 120).replace(/\n/g, ' ');
-        throw new Error(`Resposta inválida do servidor (não é JSON). Status ${response.status}. Início da resposta: ${preview}`);
+        throw new Error(`Resposta inválida do servidor (não é JSON). Status ${response.status}. Início: ${preview}`);
     }
 
     return { ok: response.ok, status: response.status, data };
 }
 
 async function fetchOsmoPrice() {
-    try {
-        const { ok, data } = await safeFetch(`${API_BASE}/api/price`);
-        if (!ok) throw new Error('Backend não está respondendo. Inicie o servidor: python3 backend/wallet.py');
-        if (!data.success) throw new Error(data.error || 'Erro ao buscar preço');
-        return data.price;
-    } catch (error) {
-        console.error('Erro ao buscar preço:', error);
-        throw error;
-    }
+    const { ok, data } = await safeFetch(`${API_BASE}/api/price`);
+    if (!ok) throw new Error('Backend não está respondendo. Inicie o servidor: python3 backend/wallet.py');
+    if (!data.success) throw new Error(data.error || 'Erro ao buscar preço');
+    return data.price;
 }
 
 async function updatePrice() {
@@ -255,30 +270,30 @@ function startAutoUpdate() {
 }
 
 async function fetchPositionSignal() {
-    const signalDiv = document.getElementById('positionSignal');
+    // const signalDiv  = document.getElementById('positionSignal');
     const signalText = document.getElementById('positionText');
-    
+
     try {
         const response = await fetch(`${API_BASE}/api/ai/position?timeframe=${currentChartTimeframe}`);
         const data = await response.json();
-        
+
         if (data.success) {
-            signalDiv.style.display = 'flex';
+            // signalDiv.style.display = 'flex';
             signalText.textContent = data.signal;
             signalText.className = 'position-text ' + data.signal.toLowerCase();
         } else {
-            signalDiv.style.display = 'none';
+            // signalDiv.style.display = 'none';
         }
     } catch (error) {
         console.error('Erro ao buscar sinal de posição:', error);
-        signalDiv.style.display = 'none';
+        // signalDiv.style.display = 'none';
     }
 }
 
 async function analyzeHistory() {
-    const analysisDiv = document.getElementById('analysis');
+    const analysisDiv    = document.getElementById('analysis');
     const analysisContent = document.getElementById('analysisContent');
-    const btnAi = document.getElementById('btnAnalyzeAi');
+    const btnAi          = document.getElementById('btnAnalyzeAi');
 
     function mountLoadingUi(subtitle) {
         analysisContent.innerHTML = `
@@ -308,7 +323,7 @@ async function analyzeHistory() {
     }
 
     function markStreamDone() {
-        const badge = document.getElementById('aiStreamBadge');
+        const badge     = document.getElementById('aiStreamBadge');
         const badgeText = document.getElementById('aiStreamBadgeText');
         if (badge) badge.classList.add('done');
         if (badgeText) badgeText.textContent = 'Resposta concluída';
@@ -322,10 +337,7 @@ async function analyzeHistory() {
 
         const aiResponse = await fetch(`${API_BASE}/api/ai/analyze?timeframe=${currentChartTimeframe}`, {
             method: 'GET',
-            headers: {
-                Accept: 'text/event-stream',
-                'Cache-Control': 'no-cache'
-            },
+            headers: { Accept: 'text/event-stream', 'Cache-Control': 'no-cache' },
             cache: 'no-store'
         });
 
@@ -350,29 +362,18 @@ async function analyzeHistory() {
         function parseSseDataPayload(dataStr) {
             if (dataStr === '[DONE]') return;
             let json;
-            try {
-                json = JSON.parse(dataStr);
-            } catch {
-                return;
-            }
+            try { json = JSON.parse(dataStr); } catch { return; }
             if (json.error) {
                 const msg = typeof json.error === 'string' ? json.error : json.error.message || JSON.stringify(json.error);
                 throw new Error(msg + (json.code ? ' (código ' + json.code + ')' : ''));
             }
-            const content = json.choices && json.choices[0] && json.choices[0].delta ? json.choices[0].delta.content || '' : '';
+            const content = json.choices?.[0]?.delta?.content || '';
             if (content) {
-                if (!firstTokenReceived) {
-                    firstTokenReceived = true;
-                    revealStreamUi();
-                }
+                if (!firstTokenReceived) { firstTokenReceived = true; revealStreamUi(); }
                 aiAnalysis += content;
                 if (aiResponseDiv) {
-                    try {
-                        aiResponseDiv.innerHTML = marked.parse(aiAnalysis);
-                    } catch (mdErr) {
-                        aiResponseDiv.textContent = aiAnalysis;
-                        console.warn('marked:', mdErr);
-                    }
+                    try { aiResponseDiv.innerHTML = marked.parse(aiAnalysis); }
+                    catch (mdErr) { aiResponseDiv.textContent = aiAnalysis; }
                 }
             }
         }
@@ -380,45 +381,38 @@ async function analyzeHistory() {
         while (true) {
             const { done, value } = await reader.read();
             sseBuffer += decoder.decode(value || new Uint8Array(), { stream: !done });
-            const lines2 = sseBuffer.split('\n');
-            sseBuffer = lines2.pop() || '';
-
-            for (let line of lines2) {
+            const lines = sseBuffer.split('\n');
+            sseBuffer = lines.pop() || '';
+            for (let line of lines) {
                 line = line.replace(/\r$/, '');
                 if (!line.startsWith('data: ')) continue;
                 const data = line.slice(6).trim();
-                if (!data) continue;
-                parseSseDataPayload(data);
+                if (data) parseSseDataPayload(data);
             }
-
             if (done) {
                 if (sseBuffer.trim()) {
-                    const lastLine = sseBuffer.replace(/\r$/, '');
-                    if (lastLine.startsWith('data: ')) {
-                        const data = lastLine.slice(6).trim();
-                        if (data) parseSseDataPayload(data);
-                    }
+                    const last = sseBuffer.replace(/\r$/, '');
+                    if (last.startsWith('data: ')) parseSseDataPayload(last.slice(6).trim());
                 }
                 break;
             }
         }
 
         if (firstTokenReceived) markStreamDone();
-
         if (!aiAnalysis.trim()) {
-            analysisContent.innerHTML =
-                '<p style="color: #9ca3af;">A IA não devolveu texto. Verifique se o token HuggingFace está configurado no .env</p>';
+            analysisContent.innerHTML = '<p style="color: #9ca3af;">A IA não devolveu texto. Verifique se o token HuggingFace está configurado no .env</p>';
         }
 
-        // Buscar sinal de posição após análise
         await fetchPositionSignal();
     } catch (error) {
         analysisContent.innerHTML =
-            '<p style="color: #ef4444;">Erro ao gerar análise: ' + (error && error.message ? error.message : String(error)) + '</p>';
+            '<p style="color: #ef4444;">Erro ao gerar análise: ' + (error?.message || String(error)) + '</p>';
     } finally {
         if (btnAi) btnAi.disabled = false;
     }
 }
+
+// ==================== WALLET ====================
 
 async function loadWallets() {
     const walletSelect = document.getElementById('walletSelect');
@@ -437,6 +431,18 @@ async function loadWallets() {
             option.textContent = `${wallet.name} (${wallet.address.substring(0, 12)}...)`;
             walletSelect.appendChild(option);
         });
+
+        // Restaura a carteira salva anteriormente
+        const saved = localStorage.getItem(STORAGE_KEY_WALLET);
+        if (saved) {
+            walletSelect.value = saved;
+            if (walletSelect.value === saved) {
+                loadBalances();
+            } else {
+                // Endereço salvo não existe mais na lista
+                localStorage.removeItem(STORAGE_KEY_WALLET);
+            }
+        }
     } catch (error) {
         console.error('Erro ao carregar carteiras:', error);
         walletSelect.innerHTML = '<option value="">Backend offline - Execute: python3 backend/wallet.py</option>';
@@ -444,12 +450,14 @@ async function loadWallets() {
 }
 
 async function loadBalances() {
-    const walletSelect = document.getElementById('walletSelect');
+    const walletSelect   = document.getElementById('walletSelect');
     const selectedAddress = walletSelect.value;
     if (!selectedAddress) return;
 
+    // Persiste a seleção
+    localStorage.setItem(STORAGE_KEY_WALLET, selectedAddress);
+
     const balancesDiv = document.getElementById('balances');
-    const addressDiv = document.getElementById('walletAddress');
 
     try {
         balancesDiv.innerHTML = '<div style="text-align: center; padding: 20px;"><div class="loader"></div></div>';
@@ -460,13 +468,11 @@ async function loadBalances() {
             return;
         }
 
-        addressDiv.textContent = data.address;
-
         if (data.balances && data.balances.length > 0) {
             let html = '';
             data.balances.forEach(balance => {
                 let denom = balance.denom;
-                let displayDenom = denom;
+                let displayDenom;
                 if (denom === 'uosmo') {
                     displayDenom = 'OSMO';
                 } else if (denom.startsWith('ibc/')) {
@@ -493,57 +499,45 @@ async function loadBalances() {
     }
 }
 
-async function simulateSwap() {
-    const fromToken = document.getElementById('swapFrom').value;
-    const toToken = document.getElementById('swapTo').value;
-    const amount = document.getElementById('swapAmount').value;
-    const statusDiv = document.getElementById('swapStatus');
-    const estimateDiv = document.getElementById('swapEstimate');
-    const outputDiv = document.getElementById('swapOutput');
 
-    if (!amount || parseFloat(amount) <= 0) {
-        statusDiv.textContent = 'Digite uma quantidade válida';
-        statusDiv.style.color = '#ef4444';
-        return;
-    }
+let swapGasTimer = null;
 
+async function fetchSwapGasInfo() {
+    const label = document.getElementById('swapGasLabel');
+    if (!label) return;
     try {
-        statusDiv.textContent = 'Simulando...';
-        statusDiv.style.color = '#9ca3af';
-        estimateDiv.style.display = 'none';
-
-        const amountMicro = Math.floor(parseFloat(amount) * 1000000);
-        const response = await fetch(`${API_BASE}/api/swap/simulate`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ from: fromToken, to: toToken, amount: amountMicro })
-        });
-        const data = await response.json();
-
+        const res = await fetch(`${API_BASE}/api/swap/gasinfo`);
+        if (!res.ok) return;
+        const data = await res.json();
         if (data.success) {
-            const outputAmount = (parseInt(data.token_out_amount) / 1000000).toFixed(6);
-            outputDiv.textContent = outputAmount + ' ' + (toToken === 'uosmo' ? 'OSMO' : 'USDC');
-            estimateDiv.style.display = 'block';
-            statusDiv.textContent = 'Simulação concluída';
-            statusDiv.style.color = '#10b981';
-        } else {
-            statusDiv.textContent = 'Erro: ' + data.error;
-            statusDiv.style.color = '#ef4444';
+            label.innerHTML =
+                `Gas price: <span class="gas-val">${data.gas_prices}</span> &nbsp;|&nbsp; ` +
+                `Ajuste: <span class="gas-val">${data.gas_adjustment}x</span> &nbsp;|&nbsp; ` +
+                `Tolerância slippage: <span class="gas-val">${data.slippage_pct}%</span>`;
         }
-    } catch (error) {
-        console.error('Erro ao simular swap:', error);
-        statusDiv.textContent = 'Erro ao simular: ' + error.message;
-        statusDiv.style.color = '#ef4444';
-    }
+    } catch (_) {}
+}
+
+function openSwapModal() {
+    document.getElementById('swapModal').classList.add('show');
+    document.getElementById('swapStatus').textContent = '';
+    document.getElementById('swapAmount').value = '';
+    fetchSwapGasInfo();
+    swapGasTimer = setInterval(fetchSwapGasInfo, 5000);
+}
+
+function closeSwapModal(event) {
+    if (event && event.target !== document.getElementById('swapModal')) return;
+    document.getElementById('swapModal').classList.remove('show');
+    if (swapGasTimer) { clearInterval(swapGasTimer); swapGasTimer = null; }
 }
 
 async function executeSwap() {
-    const fromToken = document.getElementById('swapFrom').value;
-    const toToken = document.getElementById('swapTo').value;
-    const amount = document.getElementById('swapAmount').value;
-    const walletSelect = document.getElementById('walletSelect');
-    const selectedAddress = walletSelect.value;
-    const statusDiv = document.getElementById('swapStatus');
+    const fromToken      = document.getElementById('swapFrom').value;
+    const toToken        = document.getElementById('swapTo').value;
+    const amount         = document.getElementById('swapAmount').value;
+    const selectedAddress = document.getElementById('walletSelect').value;
+    const statusDiv      = document.getElementById('swapStatus');
 
     if (!amount || parseFloat(amount) <= 0) {
         statusDiv.textContent = 'Digite uma quantidade válida';
@@ -574,13 +568,15 @@ async function executeSwap() {
         if (data.success) {
             statusDiv.textContent = 'Swap executado com sucesso!';
             statusDiv.style.color = '#10b981';
-            setTimeout(loadBalances, 2000);
+            setTimeout(() => {
+                loadBalances();
+                closeSwapModal();
+            }, 1500);
         } else {
             statusDiv.textContent = 'Erro: ' + data.error;
             statusDiv.style.color = '#ef4444';
         }
     } catch (error) {
-        console.error('Erro ao executar swap:', error);
         statusDiv.textContent = 'Erro ao executar: ' + error.message;
         statusDiv.style.color = '#ef4444';
     }
@@ -591,6 +587,22 @@ window.addEventListener('load', () => {
     loadWallets();
     refreshPriceChart();
     chartRefreshTimer = setInterval(refreshPriceChart, 30000);
+    
+    // Restaura o estado do gráfico
+    const savedExpanded = localStorage.getItem(STORAGE_KEY_CHART_EXPANDED);
+    if (savedExpanded !== null) {
+        chartExpanded = savedExpanded === 'true';
+        if (!chartExpanded) {
+            const content = document.getElementById('chartContent');
+            const timeframes = document.getElementById('chartTimeframes');
+            const caret = document.getElementById('chartToggleIcon');
+            const header = document.querySelector('.chart-header');
+            content.classList.add('collapsed');
+            timeframes.style.display = 'none';
+            if (caret) caret.classList.add('collapsed');
+            if (header) header.classList.add('collapsed');
+        }
+    }
 });
 
 window.addEventListener('beforeunload', () => {

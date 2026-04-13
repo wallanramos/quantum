@@ -26,7 +26,6 @@ SYSTEM_MESSAGE = (
 
 
 def _read_hf_token_from_dotenv(path):
-    """Lê HF_API_TOKEN= ou HUGGINGFACE_HUB_TOKEN= de um arquivo estilo .env."""
     if not os.path.isfile(path):
         return ''
     try:
@@ -48,7 +47,6 @@ def _read_hf_token_from_dotenv(path):
 
 
 def hf_resolve_api_token():
-    """Token HF: variável de ambiente ou arquivo .env."""
     for key in ('HF_API_TOKEN', 'HUGGINGFACE_HUB_TOKEN'):
         t = os.environ.get(key, '').strip()
         if t:
@@ -63,98 +61,81 @@ def hf_resolve_api_token():
 
 
 def calculate_ema(prices, period):
-    """Calcula Média Móvel Exponencial (EMA) para um período."""
     ema = []
     multiplier = 2 / (period + 1)
-    
-    # Primeiro valor é a média simples dos primeiros 'period' valores
     for i in range(len(prices)):
         if i < period - 1:
             ema.append(None)
         elif i == period - 1:
-            # SMA inicial
             ema.append(sum(prices[:period]) / period)
         else:
-            # EMA = (Preço atual × multiplicador) + (EMA anterior × (1 - multiplicador))
             ema.append((prices[i] * multiplier) + (ema[-1] * (1 - multiplier)))
-    
     return ema
 
 
-def build_analysis_prompt(timeframe='15m'):
-    """Monta o prompt de análise com dados do histórico de preços."""
+def _build_market_data(timeframe):
+    """Busca histórico e calcula indicadores. Retorna (dados, erro)."""
     result = fetch_kline_history(timeframe)
-    
     if not result['success']:
         return None, result.get('error', 'Erro ao buscar histórico')
-    
+
     history = result['history']
     if not history:
-        return None, 'Nenhum dado disponível para análise'
-    
+        return None, 'Nenhum dado disponível'
+
     prices = [item['price'] for item in history]
-    current_price = prices[0]
-    oldest_price = prices[-1]
-    max_price = max(prices)
-    min_price = min(prices)
-    avg_price = sum(prices) / len(prices)
-    
-    # Calcular médias móveis exponenciais
-    ema9 = calculate_ema(prices, 9)
+    ema9  = calculate_ema(prices, 9)
     ema21 = calculate_ema(prices, 21)
-    
-    # Últimos valores das médias móveis
-    current_ema9 = ema9[-1] if ema9[-1] else 0
-    current_ema21 = ema21[-1] if ema21[-1] else 0
-    
-    # Histórico das médias móveis (últimos 10 valores válidos)
-    ema9_history = [v for v in ema9 if v is not None][-10:]
-    ema21_history = [v for v in ema21 if v is not None][-10:]
-    
-    last_10 = ', '.join(f'{p:.6f}' for p in prices[:10])
-    ema9_str = ', '.join(f'{v:.6f}' for v in ema9_history)
-    ema21_str = ', '.join(f'{v:.6f}' for v in ema21_history)
-    
-    # Timestamp atual
+
+    return {
+        'prices': prices,
+        'current':  prices[0],
+        'oldest':   prices[-1],
+        'max':      max(prices),
+        'min':      min(prices),
+        'avg':      sum(prices) / len(prices),
+        'ema9':     ema9[-1] or 0,
+        'ema21':    ema21[-1] or 0,
+        'ema9_hist':  [v for v in ema9  if v is not None][-10:],
+        'ema21_hist': [v for v in ema21 if v is not None][-10:],
+        'count':    len(history),
+    }, None
+
+
+def build_analysis_prompt(timeframe='15m'):
+    """Monta o prompt de análise completa."""
     from datetime import datetime, timezone
-    now = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')
-    
-    # Mapear timeframe para descrição
-    tf_desc = {
-        '1m': '1 minuto',
-        '15m': '15 minutos',
-        '1h': '1 hora',
-        '4h': '4 horas',
-        '1d': '1 dia'
-    }.get(timeframe, timeframe)
-    
-    # Tendência baseada no cruzamento das médias
-    trend = "ALTA" if current_ema9 > current_ema21 else "BAIXA" if current_ema9 < current_ema21 else "LATERAL"
-    
+    d, err = _build_market_data(timeframe)
+    if err:
+        return None, err
+
+    tf_desc = {'1m': '1 minuto', '15m': '15 minutos', '1h': '1 hora', '4h': '4 horas', '1d': '1 dia'}.get(timeframe, timeframe)
+    trend   = 'ALTA' if d['ema9'] > d['ema21'] else 'BAIXA' if d['ema9'] < d['ema21'] else 'LATERAL'
+    now     = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')
+
     prompt = f"""Analise os seguintes dados de preço da criptomoeda OSMO (Osmosis):
 
 Data/Hora da análise: {now}
-Timeframe: {tf_desc} (cada vela representa {tf_desc})
+Timeframe: {tf_desc}
 
 Dados do histórico:
-- Total de registros: {len(history)}
-- Preço atual: {current_price:.6f}
-- Preço mais antigo: {oldest_price:.6f}
-- Preço máximo: {max_price:.6f}
-- Preço mínimo: {min_price:.6f}
-- Preço médio: {avg_price:.6f}
+- Total de registros: {d['count']}
+- Preço atual: {d['current']:.6f}
+- Preço mais antigo: {d['oldest']:.6f}
+- Preço máximo: {d['max']:.6f}
+- Preço mínimo: {d['min']:.6f}
+- Preço médio: {d['avg']:.6f}
 
-Médias Móveis Exponenciais (EMA):
-- EMA 9 atual: {current_ema9:.6f}
-- EMA 21 atual: {current_ema21:.6f}
-- Tendência (cruzamento EMA9/EMA21): {trend}
+Médias Móveis Exponenciais:
+- EMA 9 atual: {d['ema9']:.6f}
+- EMA 21 atual: {d['ema21']:.6f}
+- Tendência (EMA9/EMA21): {trend}
 
-Últimos 10 preços (velas mais recentes): {last_10}
+Últimos 10 preços: {', '.join(f'{p:.6f}' for p in d['prices'][:10])}
+EMA 9 (últimos 10): {', '.join(f'{v:.6f}' for v in d['ema9_hist'])}
+EMA 21 (últimos 10): {', '.join(f'{v:.6f}' for v in d['ema21_hist'])}
 
-Histórico EMA 9 (últimos 10): {ema9_str}
-Histórico EMA 21 (últimos 10): {ema21_str}
-
-Por favor, forneça uma análise detalhada incluindo:
+Forneça uma análise detalhada incluindo:
 1. Tendência geral do preço
 2. Análise do cruzamento das médias móveis (EMA 9 e EMA 21)
 3. Volatilidade observada
@@ -163,157 +144,92 @@ Por favor, forneça uma análise detalhada incluindo:
 6. Análise técnica básica
 
 Responda em português de forma clara e objetiva."""
-    
+
     return prompt, None
 
 
 def get_position_signal(timeframe='15m'):
-    """Consulta a IA para obter sinal de posição: COMPRA, VENDE ou ESPERA."""
-    import requests
-    
+    """Consulta a IA e retorna COMPRA, VENDE ou ESPERA."""
     token = hf_resolve_api_token()
     if not token:
         return None, 'Token Hugging Face não configurado'
-    
-    result = fetch_kline_history(timeframe)
-    
-    if not result['success']:
-        return None, result.get('error', 'Erro ao buscar histórico')
-    
-    history = result['history']
-    if not history:
-        return None, 'Nenhum dado disponível'
-    
-    prices = [item['price'] for item in history]
-    current_price = prices[0]
-    oldest_price = prices[-1]
-    max_price = max(prices)
-    min_price = min(prices)
-    avg_price = sum(prices) / len(prices)
-    
-    # Calcular EMA
-    ema9 = calculate_ema(prices, 9)
-    ema21 = calculate_ema(prices, 21)
-    
-    current_ema9 = ema9[-1] if ema9[-1] else 0
-    current_ema21 = ema21[-1] if ema21[-1] else 0
-    
-    # Histórico das EMAs (últimos 5 valores)
-    ema9_history = [v for v in ema9 if v is not None][-5:]
-    ema21_history = [v for v in ema21 if v is not None][-5:]
-    
-    last_5 = ', '.join(f'{p:.6f}' for p in prices[:5])
-    ema9_str = ', '.join(f'{v:.6f}' for v in ema9_history)
-    ema21_str = ', '.join(f'{v:.6f}' for v in ema21_history)
-    
-    from datetime import datetime, timezone
-    now = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')
-    
-    tf_desc = {
-        '1m': '1 minuto',
-        '15m': '15 minutos',
-        '1h': '1 hora',
-        '4h': '4 horas',
-        '1d': '1 dia'
-    }.get(timeframe, timeframe)
-    
-    prompt = f"""Você é um trader profissional. Analise os dados abaixo e responda APENAS com uma palavra: COMPRA, VENDE ou ESPERA.
 
-Data/Hora: {now}
-Timeframe: {tf_desc}
+    d, err = _build_market_data(timeframe)
+    if err:
+        return None, err
 
-Preço atual: {current_price:.6f}
-Preço mais antigo: {oldest_price:.6f}
-Preço máximo: {max_price:.6f}
-Preço mínimo: {min_price:.6f}
-Preço médio: {avg_price:.6f}
+    tf_desc = {'1m': '1 minuto', '15m': '15 minutos', '1h': '1 hora', '4h': '4 horas', '1d': '1 dia'}.get(timeframe, timeframe)
+    trend   = 'ALTA' if d['ema9'] > d['ema21'] else 'BAIXA' if d['ema9'] < d['ema21'] else 'LATERAL'
 
-EMA 9 atual: {current_ema9:.6f}
-EMA 21 atual: {current_ema21:.6f}
+    prompt = f"""Timeframe: {tf_desc}
+Preço atual: {d['current']:.6f}
+EMA 9: {d['ema9']:.6f} | EMA 21: {d['ema21']:.6f} | Tendência: {trend}
+Últimos 5 preços: {', '.join(f'{p:.6f}' for p in d['prices'][:5])}
 
-Últimos 5 preços: {last_5}
-EMA 9 (últimos 5): {ema9_str}
-EMA 21 (últimos 5): {ema21_str}
-
-Responda APENAS com: COMPRA, VENDE ou ESPERA"""
+Responda APENAS com uma única palavra: COMPRA, VENDE ou ESPERA."""
 
     try:
         response = requests.post(
             'https://router.huggingface.co/v1/chat/completions',
-            headers={
-                'Content-Type': 'application/json',
-                'Authorization': f'Bearer {token}',
-            },
+            headers={'Content-Type': 'application/json', 'Authorization': f'Bearer {token}'},
             json={
                 'model': HF_MODEL,
                 'messages': [
-                    {'role': 'system', 'content': 'Você é um trader profissional. Responda APENAS com uma palavra: COMPRA, VENDE ou ESPERA.'},
-                    {'role': 'user', 'content': prompt}
+                    {'role': 'system', 'content': 'Você é um trader profissional. Responda APENAS com uma única palavra: COMPRA, VENDE ou ESPERA. Nenhuma outra palavra.'},
+                    {'role': 'user', 'content': prompt},
                 ],
-                'temperature': 0.3,
-                'max_tokens': 10,
+                'temperature': 0.1,
+                'max_tokens': 5,
             },
-            timeout=30
+            timeout=30,
         )
-        
+
         if response.status_code >= 400:
             return None, f'Erro na API: {response.status_code}'
-        
-        data = response.json()
-        content = data.get('choices', [{}])[0].get('message', {}).get('content', '').strip().upper()
-        
-        # Validar resposta
+
+        content = response.json()['choices'][0]['message']['content'].strip().upper()
+
+        # Extrai a palavra mesmo se a IA colocar texto extra
         if 'COMPRA' in content:
             signal = 'COMPRA'
         elif 'VENDE' in content:
             signal = 'VENDE'
         else:
             signal = 'ESPERA'
-        
-        return {
-            'signal': signal,
-            'price': current_price,
-            'ema9': current_ema9,
-            'ema21': current_ema21
-        }, None
-        
+
+        return {'signal': signal, 'price': d['current'], 'ema9': d['ema9'], 'ema21': d['ema21']}, None
+
     except Exception as e:
         return None, str(e)
 
 
 def stream_ai_analysis(timeframe='15m'):
-    """Generator que faz streaming da análise de IA.
-    
-    Yields bytes no formato SSE (data: ...\n\n).
-    """
+    """Generator que faz streaming da análise de IA em formato SSE."""
     token = hf_resolve_api_token()
     if not token:
         yield f'data: {json.dumps({"error": "Token Hugging Face não configurado. Configure HF_API_TOKEN no .env"})}\n\n'.encode('utf-8')
         return
-    
+
     prompt, error = build_analysis_prompt(timeframe)
     if error:
         yield f'data: {json.dumps({"error": error})}\n\n'.encode('utf-8')
         return
-    
+
     payload = {
         'model': HF_MODEL,
         'messages': [
             {'role': 'system', 'content': SYSTEM_MESSAGE},
-            {'role': 'user', 'content': prompt}
+            {'role': 'user',   'content': prompt},
         ],
         'temperature': HF_TEMPERATURE,
         'stream': True,
         'max_tokens': HF_MAX_TOKENS,
     }
-    
+
     try:
         with requests.post(
             'https://router.huggingface.co/v1/chat/completions',
-            headers={
-                'Content-Type': 'application/json',
-                'Authorization': f'Bearer {token}',
-            },
+            headers={'Content-Type': 'application/json', 'Authorization': f'Bearer {token}'},
             json=payload,
             stream=True,
             timeout=HF_TIMEOUT,
