@@ -255,13 +255,19 @@ def api_get_balance(address):
 
 @app.route('/api/wallets', methods=['GET'])
 def api_list_wallets():
-    return jsonify({'success': True, 'wallets': [
-        {
-            'name': 'Wallet Principal',
-            'address': 'osmo1sp8se0r87nwwwk9xz0fhg6963lgu86mes6he88',
-            'key_name': 'wallet_osmo1sp8',
-        }
-    ]})
+    result = list_keys()
+    if not result.get('success'):
+        return jsonify(result)
+    
+    wallets = []
+    for key in result.get('keys', []):
+        wallets.append({
+            'name': key.get('name', 'Sem nome'),
+            'address': key.get('address', ''),
+            'key_name': key.get('name', ''),
+        })
+    
+    return jsonify({'success': True, 'wallets': wallets})
 
 
 @app.route('/api/history', methods=['GET'])
@@ -272,6 +278,84 @@ def api_get_history():
         status = 400 if 'inválido' in result.get('error', '') else 502
         return jsonify(result), status
     return jsonify(result)
+
+
+@app.route('/api/wallet/restore', methods=['POST'])
+def api_wallet_restore():
+    """Restaura uma carteira a partir do mnemônico via osmosisd keys add --recover."""
+    data     = request.get_json()
+    name     = (data.get('name') or '').strip()
+    mnemonic = (data.get('mnemonic') or '').strip()
+
+    if not name:
+        return jsonify({'success': False, 'error': 'Nome da chave é obrigatório'}), 400
+    if not mnemonic:
+        return jsonify({'success': False, 'error': 'Mnemônico é obrigatório'}), 400
+
+    # Passa o mnemônico via stdin para evitar que apareça no histórico do shell
+    command = f"{OSMOSISD_PATH} keys add {name} --recover --output json"
+    try:
+        result = subprocess.run(
+            command,
+            shell=True,
+            input=mnemonic + '\n',
+            capture_output=True,
+            text=True,
+            timeout=30
+        )
+        if result.returncode != 0:
+            err = result.stderr.strip() or result.stdout.strip() or 'Erro ao restaurar chave'
+            return jsonify({'success': False, 'error': err})
+
+        # Tenta parsear a saída JSON para retornar o endereço
+        try:
+            out = json.loads(result.stdout or result.stderr)
+            address = out.get('address', '')
+        except (json.JSONDecodeError, AttributeError):
+            address = ''
+
+        return jsonify({'success': True, 'name': name, 'address': address})
+
+    except subprocess.TimeoutExpired:
+        return jsonify({'success': False, 'error': 'Timeout ao restaurar carteira'})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+
+@app.route('/api/wallet/delete', methods=['POST'])
+def api_wallet_delete():
+    """Remove uma chave do keyring via osmosisd keys delete."""
+    data    = request.get_json()
+    address = (data.get('address') or '').strip()
+
+    if not address:
+        return jsonify({'success': False, 'error': 'Endereço é obrigatório'}), 400
+
+    # Resolve o nome da chave pelo endereço
+    key_name = KEY_MAPPING.get(address)
+    if not key_name:
+        # Tenta buscar pelo endereço direto na listagem
+        keys_result = list_keys()
+        if keys_result.get('success'):
+            for k in keys_result.get('keys', []):
+                if k.get('address') == address:
+                    key_name = k.get('name')
+                    break
+
+    if not key_name:
+        return jsonify({'success': False, 'error': 'Chave não encontrada para este endereço'})
+
+    stdout, stderr, code = run_command(
+        f"{OSMOSISD_PATH} keys delete {key_name} --yes --output json"
+    )
+
+    if code != 0:
+        return jsonify({'success': False, 'error': stderr.strip() or 'Erro ao excluir chave'})
+
+    # Remove do mapeamento em memória se existir
+    KEY_MAPPING.pop(address, None)
+
+    return jsonify({'success': True, 'name': key_name})
 
 
 @app.route('/api/swap/gasinfo', methods=['GET'])

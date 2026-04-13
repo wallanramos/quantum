@@ -24,6 +24,8 @@
             --green: #3dffa0;
             --green-dim: rgba(61, 255, 160, 0.07);
             --red: #ff4d6a;
+            --red-dim: rgba(255, 77, 106, 0.08);
+            --red-border: rgba(255, 77, 106, 0.18);
             --mono: 'DM Mono', monospace;
             --sans: 'Syne', sans-serif;
         }
@@ -38,11 +40,7 @@
             overflow-x: hidden;
         }
 
-        .app {
-            max-width: 860px;
-            margin: 0 auto;
-            padding: 0 36px;
-        }
+        .app { max-width: 860px; margin: 0 auto; padding: 0 36px; }
 
         /* ── TOP BAR ── */
         .topbar {
@@ -51,6 +49,7 @@
             justify-content: space-between;
             padding: 30px 0 22px;
             border-bottom: 1px solid var(--border);
+            gap: 16px;
         }
 
         .wordmark {
@@ -60,12 +59,24 @@
             letter-spacing: 0.22em;
             text-transform: uppercase;
             color: var(--text);
+            flex-shrink: 0;
         }
 
-        .wordmark em {
-            font-style: normal;
-            color: var(--accent);
+        .wordmark em { font-style: normal; color: var(--accent); }
+
+        .topbar-right {
+            display: flex;
+            align-items: center;
+            gap: 8px;
         }
+
+        .wallet-actions {
+            display: none;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .wallet-actions.visible { display: flex; }
 
         /* ── SECTIONS ── */
         .section {
@@ -119,23 +130,6 @@
             margin-right: 2px;
         }
 
-        .price-tag {
-            font-family: var(--mono);
-            font-size: 0.68rem;
-            font-weight: 500;
-            padding: 4px 9px;
-            border-radius: 2px;
-            background: var(--green-dim);
-            color: var(--green);
-            border: 1px solid rgba(61, 255, 160, 0.15);
-        }
-
-        .price-tag.negative {
-            background: rgba(255, 77, 106, 0.07);
-            color: var(--red);
-            border-color: rgba(255, 77, 106, 0.14);
-        }
-
         .status-line {
             font-family: var(--mono);
             font-size: 0.7rem;
@@ -144,9 +138,7 @@
         }
 
         /* ── BALANCES ── */
-        .balance-list {
-            margin-top: 28px;
-        }
+        .balance-list { margin-top: 28px; }
 
         .balance-item {
             display: flex;
@@ -171,15 +163,6 @@
             font-family: var(--mono);
             font-size: 0.9rem;
             color: var(--text);
-        }
-
-        .wallet-address {
-            font-family: var(--mono);
-            font-size: 0.62rem;
-            color: var(--text-dim);
-            margin-top: 16px;
-            word-break: break-all;
-            line-height: 1.6;
         }
 
         /* ── ACTIONS ── */
@@ -216,6 +199,16 @@
         .btn-accent:hover { background: #d5ff70; transform: translateY(-1px); }
         .btn-accent:active { transform: none; }
 
+        .btn-danger {
+            background: transparent;
+            border: 1px solid var(--red-border);
+            color: var(--red);
+        }
+
+        .btn-danger:hover { background: var(--red-dim); border-color: var(--red); }
+
+        .btn-icon { padding: 8px 12px; font-size: 0.85rem; line-height: 1; }
+
         .btn:disabled { opacity: 0.25; cursor: not-allowed; transform: none !important; }
 
         /* ── SELECT ── */
@@ -248,9 +241,7 @@
             margin-bottom: 20px;
         }
 
-        .chart-header.collapsed {
-            margin-bottom: 0;
-        }
+        .chart-header.collapsed { margin-bottom: 0; }
 
         .chart-header-left {
             display: flex;
@@ -292,7 +283,6 @@
         }
 
         .chart-wrap { position: relative; height: 300px; }
-
         .chart-lw { width: 100%; height: 300px; }
 
         .chart-empty {
@@ -314,8 +304,8 @@
             overflow: hidden;
         }
 
-        .chart-content.collapsed { 
-            max-height: 0 !important; 
+        .chart-content.collapsed {
+            max-height: 0 !important;
             opacity: 0;
             margin: 0;
             padding: 0;
@@ -413,7 +403,7 @@
             color: var(--text-muted);
         }
 
-        /* ── MODAL ── */
+        /* ── MODAL BASE ── */
         .modal-overlay {
             position: fixed;
             inset: 0;
@@ -533,10 +523,80 @@
             color: var(--text-muted);
             margin-bottom: 12px;
             line-height: 1.5;
+            min-height: 1.2em;
         }
 
         .modal-actions { display: flex; gap: 10px; }
         .modal-actions .btn { flex: 1; }
+
+        /* ── WALLET MODAL ── */
+        .wallet-modal-content { max-width: 460px; }
+
+        .wallet-modal-tabs {
+            display: flex;
+            gap: 0;
+            margin-bottom: 26px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .wallet-tab {
+            font-family: var(--mono);
+            font-size: 0.66rem;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            padding: 8px 18px;
+            background: transparent;
+            border: none;
+            color: var(--text-dim);
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+            margin-bottom: -1px;
+            transition: all 0.15s;
+        }
+
+        .wallet-tab:hover { color: var(--text-muted); }
+
+        .wallet-tab.active {
+            color: var(--accent);
+            border-bottom-color: var(--accent);
+        }
+
+        .wallet-tab-panel { display: none; }
+        .wallet-tab-panel.active { display: block; }
+
+        .wallet-info-block {
+            font-family: var(--mono);
+            font-size: 0.7rem;
+            color: var(--text-muted);
+            line-height: 1.7;
+            padding: 14px;
+            background: rgba(255,255,255,0.02);
+            border: 1px solid var(--border-subtle);
+            border-radius: 2px;
+            margin-bottom: 18px;
+            word-break: break-all;
+        }
+
+        .wallet-info-block strong {
+            color: var(--text-dim);
+            display: block;
+            font-size: 0.58rem;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            margin-bottom: 5px;
+        }
+
+        .wallet-warning {
+            font-family: var(--mono);
+            font-size: 0.65rem;
+            color: var(--red);
+            line-height: 1.65;
+            padding: 12px 14px;
+            border: 1px solid var(--red-border);
+            border-radius: 2px;
+            background: var(--red-dim);
+            margin-bottom: 20px;
+        }
 
         /* ── RESPONSIVE ── */
         @media (max-width: 600px) {
@@ -548,6 +608,8 @@
             .modal-row { grid-template-columns: 1fr; }
             .chart-header { gap: 12px; }
             .chart-header-left { gap: 12px; flex-wrap: wrap; }
+            .topbar { flex-wrap: wrap; }
+            .topbar-right { width: 100%; justify-content: space-between; }
         }
     </style>
 </head>
@@ -557,9 +619,15 @@
         <!-- TOP BAR -->
         <div class="topbar">
             <div class="wordmark">quan<em>t</em>um</div>
-            <select id="walletSelect" class="select" onchange="loadBalances()">
-                <option value="">selecione carteira</option>
-            </select>
+            <div class="topbar-right">
+                <div class="wallet-actions" id="walletActions">
+                    <button class="btn btn-ghost btn-icon" title="Restaurar carteira" onclick="openWalletModal('restore')">↺</button>
+                    <button class="btn btn-danger btn-icon" title="Excluir carteira" onclick="openWalletModal('delete')">✕</button>
+                </div>
+                <select id="walletSelect" class="select" onchange="loadBalances()">
+                    <option value="">selecione carteira</option>
+                </select>
+            </div>
         </div>
 
         <!-- PRICE SECTION -->
@@ -655,6 +723,56 @@
             <div class="modal-actions">
                 <button class="btn btn-ghost" onclick="closeSwapModal()">Cancelar</button>
                 <button class="btn btn-accent" onclick="executeSwap()">Executar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- WALLET MODAL -->
+    <div id="walletModal" class="modal-overlay" onclick="closeWalletModal(event)">
+        <div class="modal-content wallet-modal-content">
+            <div class="modal-header">
+                <div class="modal-title">Gerenciar Carteira</div>
+                <button class="modal-close" onclick="closeWalletModal()">&times;</button>
+            </div>
+
+            <div class="wallet-modal-tabs">
+                <button class="wallet-tab active" data-tab="restore" onclick="switchWalletTab('restore')">Restaurar</button>
+                <button class="wallet-tab" data-tab="delete" onclick="switchWalletTab('delete')">Excluir</button>
+            </div>
+
+            <!-- Painel: Restaurar -->
+            <div class="wallet-tab-panel active" id="tabRestore">
+                <div class="input-group">
+                    <label class="input-label">Nome da chave</label>
+                    <input type="text" id="restoreName" class="input" placeholder="ex: minha_wallet">
+                </div>
+                <div class="input-group">
+                    <label class="input-label">Mnemônico (24 palavras)</label>
+                    <textarea id="restoreMnemonic" class="input" rows="3"
+                        style="resize: vertical; line-height: 1.6;"
+                        placeholder="palavra1 palavra2 palavra3 ..."></textarea>
+                </div>
+                <div class="status-text" id="restoreStatus"></div>
+                <div class="modal-actions">
+                    <button class="btn btn-ghost" onclick="closeWalletModal()">Cancelar</button>
+                    <button class="btn btn-accent" id="btnRestore" onclick="restoreWallet()">Restaurar</button>
+                </div>
+            </div>
+
+            <!-- Painel: Excluir -->
+            <div class="wallet-tab-panel" id="tabDelete">
+                <div class="wallet-info-block">
+                    <strong>Carteira selecionada</strong>
+                    <span id="deleteWalletName">—</span>
+                </div>
+                <div class="wallet-warning">
+                    Esta ação remove a chave do keyring local. Certifique-se de ter o mnemônico salvo antes de continuar. Esta operação não pode ser desfeita.
+                </div>
+                <div class="status-text" id="deleteStatus"></div>
+                <div class="modal-actions">
+                    <button class="btn btn-ghost" onclick="closeWalletModal()">Cancelar</button>
+                    <button class="btn btn-danger" id="btnDelete" onclick="deleteWallet()">Excluir chave</button>
+                </div>
             </div>
         </div>
     </div>

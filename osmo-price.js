@@ -13,40 +13,34 @@ const CHART_RANGE_MS = {
 };
 
 const API_BASE = `${window.location.protocol}//${window.location.hostname}:5000`;
-const STORAGE_KEY_WALLET = 'quantum_selected_wallet';
-const STORAGE_KEY_CHART_EXPANDED = 'quantum_chart_expanded';
+const STORAGE_KEY_WALLET  = 'quantum_selected_wallet';
+const STORAGE_KEY_CHART   = 'quantum_chart_expanded';
+
+// ==================== CHART ====================
 
 function toggleChart(event) {
-    // Se clicou em um botão de timeframe, não faz nada
-    if (event && event.target.closest('.timeframe-btn')) {
-        return;
-    }
-    
-    const content = document.getElementById('chartContent');
+    if (event && event.target.closest('.timeframe-btn')) return;
+
+    const content    = document.getElementById('chartContent');
     const timeframes = document.getElementById('chartTimeframes');
-    const caret = document.getElementById('chartToggleIcon');
-    const header = document.querySelector('.chart-header');
-    
+    const caret      = document.getElementById('chartToggleIcon');
+    const header     = document.querySelector('.chart-header');
+
     chartExpanded = !chartExpanded;
-    localStorage.setItem(STORAGE_KEY_CHART_EXPANDED, chartExpanded);
-    
+    localStorage.setItem(STORAGE_KEY_CHART, chartExpanded);
+
     if (chartExpanded) {
         content.classList.remove('collapsed');
         timeframes.style.display = 'flex';
-        if (caret) caret.classList.remove('collapsed');
+        if (caret)  caret.classList.remove('collapsed');
         if (header) header.classList.remove('collapsed');
-        // Aguarda a animação antes de redesenhar
         setTimeout(() => {
-            if (lwChart) {
-                lwChart.applyOptions({ 
-                    width: document.getElementById('priceChartContainer').clientWidth || 800 
-                });
-            }
+            if (lwChart) lwChart.applyOptions({ width: document.getElementById('priceChartContainer').clientWidth || 800 });
         }, 300);
     } else {
         content.classList.add('collapsed');
         timeframes.style.display = 'none';
-        if (caret) caret.classList.add('collapsed');
+        if (caret)  caret.classList.add('collapsed');
         if (header) header.classList.add('collapsed');
     }
 }
@@ -57,55 +51,37 @@ async function fetchPriceHistory(timeframe) {
         const res = await fetch(`${API_BASE}/api/history?timeframe=${tf}`);
         if (res.ok) {
             const data = await res.json();
-            if (data.success && Array.isArray(data.history)) {
-                return data.history;
-            }
+            if (data.success && Array.isArray(data.history)) return data.history;
         }
-    } catch (_) {
-        /* backend offline */
-    }
+    } catch (_) {}
     return [];
 }
 
 function destroyPriceChart() {
-    if (chartResizeHandler) {
-        window.removeEventListener('resize', chartResizeHandler);
-        chartResizeHandler = null;
-    }
-    if (lwChart) {
-        lwChart.remove();
-        lwChart = null;
-    }
+    if (chartResizeHandler) { window.removeEventListener('resize', chartResizeHandler); chartResizeHandler = null; }
+    if (lwChart) { lwChart.remove(); lwChart = null; }
 }
 
 function setPriceChartTimeframe(tf) {
     if (!CHART_RANGE_MS[tf]) return;
     currentChartTimeframe = tf;
-    document.querySelectorAll('.timeframe-btn').forEach((btn) => {
-        btn.classList.toggle('active', btn.dataset.tf === tf);
-    });
+    document.querySelectorAll('.timeframe-btn').forEach(btn => btn.classList.toggle('active', btn.dataset.tf === tf));
     refreshPriceChart();
 }
 
 function buildCandles(items) {
-    return items
-        .map((item) => {
-            const t = item.timestamp ? Math.floor(new Date(item.timestamp).getTime() / 1000) : null;
-            if (!t || isNaN(t) || t <= 0) return null;
-            const o = parseFloat(item.open);
-            const h = parseFloat(item.high);
-            const l = parseFloat(item.low);
-            const c = parseFloat(item.close);
-            if (!isFinite(o) || !isFinite(h) || !isFinite(l) || !isFinite(c)) return null;
-            return { time: t, open: o, high: h, low: l, close: c };
-        })
-        .filter(Boolean)
-        .sort((a, b) => a.time - b.time);
+    return items.map(item => {
+        const t = item.timestamp ? Math.floor(new Date(item.timestamp).getTime() / 1000) : null;
+        if (!t || isNaN(t) || t <= 0) return null;
+        const o = parseFloat(item.open), h = parseFloat(item.high),
+              l = parseFloat(item.low),  c = parseFloat(item.close);
+        if (!isFinite(o) || !isFinite(h) || !isFinite(l) || !isFinite(c)) return null;
+        return { time: t, open: o, high: h, low: l, close: c };
+    }).filter(Boolean).sort((a, b) => a.time - b.time);
 }
 
 function calculateEMA(candles, period) {
-    const ema = [];
-    const multiplier = 2 / (period + 1);
+    const ema = [], mult = 2 / (period + 1);
     for (let i = 0; i < candles.length; i++) {
         if (i < period - 1) {
             ema.push({ time: candles[i].time, value: null });
@@ -114,8 +90,7 @@ function calculateEMA(candles, period) {
             for (let j = 0; j < period; j++) sum += candles[j].close;
             ema.push({ time: candles[i].time, value: sum / period });
         } else {
-            const prevEma = ema[i - 1].value;
-            ema.push({ time: candles[i].time, value: (candles[i].close * multiplier) + (prevEma * (1 - multiplier)) });
+            ema.push({ time: candles[i].time, value: (candles[i].close * mult) + (ema[i-1].value * (1 - mult)) });
         }
     }
     return ema;
@@ -128,90 +103,67 @@ function renderPriceChart() {
     const LW = typeof LightweightCharts !== 'undefined' ? LightweightCharts : null;
 
     if (!container) return;
-
     if (!LW || typeof LW.createChart !== 'function') {
-        if (emptyEl) { emptyEl.classList.remove('hidden'); emptyEl.textContent = 'Biblioteca lightweight-charts não carregou.'; }
+        if (emptyEl) { emptyEl.classList.remove('hidden'); emptyEl.textContent = 'Biblioteca não carregou.'; }
         return;
     }
-
     if (!rawPriceHistory || rawPriceHistory.length === 0) {
         destroyPriceChart();
-        if (emptyEl) { emptyEl.classList.remove('hidden'); emptyEl.textContent = 'Sem dados. Verifique se o backend está rodando.'; }
+        if (emptyEl) { emptyEl.classList.remove('hidden'); emptyEl.textContent = 'Sem dados. Backend rodando?'; }
         if (statusEl) statusEl.textContent = '';
         return;
     }
 
     const candles = buildCandles(rawPriceHistory);
-
     if (candles.length === 0) {
         destroyPriceChart();
-        if (emptyEl) { emptyEl.classList.remove('hidden'); emptyEl.textContent = 'Dados recebidos mas sem candles válidos.'; }
-        if (statusEl) statusEl.textContent = '';
+        if (emptyEl) { emptyEl.classList.remove('hidden'); emptyEl.textContent = 'Candles inválidos.'; }
         return;
     }
 
     if (emptyEl) emptyEl.classList.add('hidden');
-
-    const w = container.clientWidth || 800;
     destroyPriceChart();
 
     try {
         lwChart = LW.createChart(container, {
-            width: w,
-            height: 320,
-            layout: {
-                background: { type: 'solid', color: 'rgba(15, 15, 35, 0.92)' },
-                textColor: '#9ca3af',
-                fontFamily: "'Inter', sans-serif"
-            },
-            grid: {
-                vertLines: { color: 'rgba(255, 255, 255, 0.06)' },
-                horzLines: { color: 'rgba(255, 255, 255, 0.06)' }
-            },
+            width: container.clientWidth || 800,
+            height: 300,
+            layout: { background: { type: 'solid', color: '#080808' }, textColor: '#666', fontFamily: "'DM Mono', monospace" },
+            grid: { vertLines: { color: '#141414' }, horzLines: { color: '#141414' } },
             crosshair: { mode: LW.CrosshairMode ? LW.CrosshairMode.Normal : 0 },
-            rightPriceScale: { borderColor: 'rgba(255, 255, 255, 0.1)', scaleMargins: { top: 0.08, bottom: 0.08 } },
-            timeScale: { borderColor: 'rgba(255, 255, 255, 0.1)', timeVisible: true, secondsVisible: false },
-            localization: { priceFormatter: (p) => '$' + p.toFixed(4) }
+            rightPriceScale: { borderColor: '#1e1e1e', scaleMargins: { top: 0.08, bottom: 0.08 } },
+            timeScale: { borderColor: '#1e1e1e', timeVisible: true, secondsVisible: false },
+            localization: { priceFormatter: p => '$' + p.toFixed(4) }
         });
 
-        const series = lwChart.addCandlestickSeries({
-            upColor: '#34d399', downColor: '#f87171',
-            borderUpColor: '#34d399', borderDownColor: '#f87171',
-            wickUpColor: '#34d399', wickDownColor: '#f87171'
-        });
-        series.setData(candles);
+        lwChart.addCandlestickSeries({
+            upColor: '#3dffa0', downColor: '#ff4d6a',
+            borderUpColor: '#3dffa0', borderDownColor: '#ff4d6a',
+            wickUpColor: '#3dffa0', wickDownColor: '#ff4d6a'
+        }).setData(candles);
 
-        const ema9Data = calculateEMA(candles, 9).filter(d => d.value !== null);
-        const ema9Series = lwChart.addLineSeries({ color: '#fbbf24', lineWidth: 1, priceLineVisible: false, lastValueVisible: false });
-        ema9Series.setData(ema9Data);
+        lwChart.addLineSeries({ color: '#c8f562', lineWidth: 1, priceLineVisible: false, lastValueVisible: false })
+            .setData(calculateEMA(candles, 9).filter(d => d.value !== null));
 
-        const ema21Data = calculateEMA(candles, 21).filter(d => d.value !== null);
-        const ema21Series = lwChart.addLineSeries({ color: '#f472b6', lineWidth: 1, priceLineVisible: false, lastValueVisible: false });
-        ema21Series.setData(ema21Data);
+        lwChart.addLineSeries({ color: '#f472b6', lineWidth: 1, priceLineVisible: false, lastValueVisible: false })
+            .setData(calculateEMA(candles, 21).filter(d => d.value !== null));
 
         lwChart.timeScale().fitContent();
 
         chartResizeHandler = () => {
-            if (!lwChart) return;
-            lwChart.applyOptions({ width: container.clientWidth || 800, height: 320 });
+            if (lwChart) lwChart.applyOptions({ width: container.clientWidth || 800 });
         };
         window.addEventListener('resize', chartResizeHandler);
-
     } catch (err) {
-        console.error('Erro ao desenhar gráfico:', err);
-        if (emptyEl) { emptyEl.classList.remove('hidden'); emptyEl.textContent = 'Erro ao renderizar: ' + err.message; }
+        if (emptyEl) { emptyEl.classList.remove('hidden'); emptyEl.textContent = 'Erro: ' + err.message; }
         return;
     }
 
     const tf = currentChartTimeframe;
-    const firstOpen = candles[0].open;
-    const lastClose = candles[candles.length - 1].close;
-    const delta = lastClose - firstOpen;
-    const deltaPct = firstOpen !== 0 ? (delta / firstOpen) * 100 : 0;
-    if (statusEl) {
-        statusEl.textContent =
-            `CoinEx · ${candles.length} velas (${tf}) · O→F: ${delta >= 0 ? '+' : ''}${delta.toFixed(6)} (${delta >= 0 ? '+' : ''}${deltaPct.toFixed(2)}%) · EMA9/21`;
-    }
+    const delta = candles[candles.length-1].close - candles[0].open;
+    const pct   = candles[0].open !== 0 ? (delta / candles[0].open) * 100 : 0;
+    if (statusEl) statusEl.textContent =
+        `CoinEx · ${candles.length} velas (${tf}) · ${delta >= 0 ? '+' : ''}${delta.toFixed(6)} (${delta >= 0 ? '+' : ''}${pct.toFixed(2)}%) · EMA9/21`;
 }
 
 async function refreshPriceChart() {
@@ -219,47 +171,44 @@ async function refreshPriceChart() {
     renderPriceChart();
 }
 
+// ==================== UTILS ====================
+
 async function safeFetch(url, options = {}) {
     let response;
-    try {
-        response = await fetch(url, options);
-    } catch (error) {
-        throw new Error('Backend não está rodando. Execute: python3 backend/wallet.py');
-    }
+    try { response = await fetch(url, options); }
+    catch { throw new Error('Backend não está rodando. Execute: python3 backend/wallet.py'); }
 
     const text = await response.text();
     let data;
-    try {
-        data = JSON.parse(text);
-    } catch (_) {
-        const preview = text.substring(0, 120).replace(/\n/g, ' ');
-        throw new Error(`Resposta inválida do servidor (não é JSON). Status ${response.status}. Início: ${preview}`);
+    try { data = JSON.parse(text); }
+    catch {
+        throw new Error(`Resposta inválida. Status ${response.status}. Início: ${text.substring(0, 120).replace(/\n/g,' ')}`);
     }
-
     return { ok: response.ok, status: response.status, data };
 }
 
+// ==================== PREÇO ====================
+
 async function fetchOsmoPrice() {
     const { ok, data } = await safeFetch(`${API_BASE}/api/price`);
-    if (!ok) throw new Error('Backend não está respondendo. Inicie o servidor: python3 backend/wallet.py');
+    if (!ok) throw new Error('Backend não responde.');
     if (!data.success) throw new Error(data.error || 'Erro ao buscar preço');
     return data.price;
 }
 
 async function updatePrice() {
-    const priceElement = document.getElementById('price');
-    const statusElement = document.getElementById('status');
-
+    const priceEl  = document.getElementById('price');
+    const statusEl = document.getElementById('status');
     try {
-        priceElement.textContent = '...';
-        statusElement.textContent = 'Carregando...';
+        priceEl.textContent  = '...';
+        statusEl.textContent = 'carregando...';
         const price = await fetchOsmoPrice();
-        priceElement.textContent = price.toFixed(4);
-        statusElement.textContent = `Atualizado em: ${new Date().toLocaleString('pt-BR')}`;
+        priceEl.textContent  = price.toFixed(4);
+        statusEl.textContent = `atualizado em: ${new Date().toLocaleString('pt-BR')}`;
         await refreshPriceChart();
-    } catch (error) {
-        priceElement.textContent = 'Erro';
-        statusElement.textContent = 'Erro: ' + error.message;
+    } catch (err) {
+        priceEl.textContent  = 'erro';
+        statusEl.textContent = err.message;
     }
 }
 
@@ -269,112 +218,73 @@ function startAutoUpdate() {
     updateInterval = setInterval(updatePrice, 60000);
 }
 
+// ==================== IA ====================
+
 async function fetchPositionSignal() {
-    // const signalDiv  = document.getElementById('positionSignal');
-    const signalText = document.getElementById('positionText');
-
     try {
-        const response = await fetch(`${API_BASE}/api/ai/position?timeframe=${currentChartTimeframe}`);
-        const data = await response.json();
-
-        if (data.success) {
-            // signalDiv.style.display = 'flex';
-            signalText.textContent = data.signal;
-            signalText.className = 'position-text ' + data.signal.toLowerCase();
-        } else {
-            // signalDiv.style.display = 'none';
-        }
-    } catch (error) {
-        console.error('Erro ao buscar sinal de posição:', error);
-        // signalDiv.style.display = 'none';
-    }
+        const res  = await fetch(`${API_BASE}/api/ai/position?timeframe=${currentChartTimeframe}`);
+        const data = await res.json();
+        // positionText removido do novo layout — sem-op
+    } catch (_) {}
 }
 
 async function analyzeHistory() {
-    const analysisDiv    = document.getElementById('analysis');
+    const analysisDiv     = document.getElementById('analysis');
     const analysisContent = document.getElementById('analysisContent');
-    const btnAi          = document.getElementById('btnAnalyzeAi');
+    const btnAi           = document.getElementById('btnAnalyzeAi');
 
     function mountLoadingUi(subtitle) {
         analysisContent.innerHTML = `
             <div class="ai-loading-wrap" id="aiLoadingState">
                 <div class="loader"></div>
-                <div class="ai-loading-text">
-                    <strong class="ai-loading-title">Análise com IA</strong>
-                    <p class="ai-loading-sub" id="aiLoadingSub">${subtitle}</p>
-                </div>
+                <div class="ai-loading-text" id="aiLoadingSub">${subtitle}</div>
             </div>
-            <div id="aiStreamWrap" class="ai-stream-container" style="display:none;">
-                <div class="ai-stream-badge" id="aiStreamBadge"><span class="ai-dot-pulse"></span> <span id="aiStreamBadgeText">Recebendo em tempo real</span></div>
+            <div id="aiStreamWrap" style="display:none;">
+                <div class="ai-stream-badge" id="aiStreamBadge"><span class="ai-dot-pulse"></span><span id="aiStreamBadgeText">recebendo em tempo real</span></div>
                 <div class="ai-response" id="aiStreamBody"></div>
             </div>`;
     }
 
-    function setLoadingSub(text) {
-        const el = document.getElementById('aiLoadingSub');
-        if (el) el.textContent = text;
-    }
-
+    function setLoadingSub(t) { const el = document.getElementById('aiLoadingSub'); if (el) el.textContent = t; }
     function revealStreamUi() {
-        const loadEl = document.getElementById('aiLoadingState');
-        const wrapEl = document.getElementById('aiStreamWrap');
-        if (loadEl) loadEl.style.display = 'none';
-        if (wrapEl) wrapEl.style.display = 'block';
+        const l = document.getElementById('aiLoadingState'), w = document.getElementById('aiStreamWrap');
+        if (l) l.style.display = 'none';
+        if (w) w.style.display = 'block';
     }
-
-    function markStreamDone() {
-        const badge     = document.getElementById('aiStreamBadge');
-        const badgeText = document.getElementById('aiStreamBadgeText');
-        if (badge) badge.classList.add('done');
-        if (badgeText) badgeText.textContent = 'Resposta concluída';
+    function markDone() {
+        const b = document.getElementById('aiStreamBadge'), t = document.getElementById('aiStreamBadgeText');
+        if (b) b.classList.add('done');
+        if (t) t.textContent = 'resposta concluída';
     }
 
     try {
         if (btnAi) btnAi.disabled = true;
         analysisDiv.style.display = 'block';
-        mountLoadingUi('Conectando à IA…');
+        mountLoadingUi('conectando à IA…');
         analysisDiv.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 
-        const aiResponse = await fetch(`${API_BASE}/api/ai/analyze?timeframe=${currentChartTimeframe}`, {
-            method: 'GET',
-            headers: { Accept: 'text/event-stream', 'Cache-Control': 'no-cache' },
-            cache: 'no-store'
+        const res = await fetch(`${API_BASE}/api/ai/analyze?timeframe=${currentChartTimeframe}`, {
+            headers: { Accept: 'text/event-stream', 'Cache-Control': 'no-cache' }, cache: 'no-store'
         });
 
-        if (!aiResponse.ok) {
-            const errText = await aiResponse.text();
-            throw new Error(`API IA retornou HTTP ${aiResponse.status}. ${errText.slice(0, 280)}`);
-        }
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        if (!res.body) throw new Error('Streaming indisponível neste navegador.');
 
-        if (!aiResponse.body) {
-            throw new Error('Resposta da IA sem corpo (streaming indisponível neste navegador?)');
-        }
+        setLoadingSub('aguardando primeiro token…');
 
-        setLoadingSub('Aguardando o primeiro token da resposta…');
+        const reader = res.body.getReader(), decoder = new TextDecoder();
+        let aiText = '', sseBuffer = '', firstToken = false;
+        const bodyEl = document.getElementById('aiStreamBody');
 
-        const reader = aiResponse.body.getReader();
-        const decoder = new TextDecoder();
-        let aiAnalysis = '';
-        let sseBuffer = '';
-        let firstTokenReceived = false;
-        const aiResponseDiv = document.getElementById('aiStreamBody');
-
-        function parseSseDataPayload(dataStr) {
-            if (dataStr === '[DONE]') return;
-            let json;
-            try { json = JSON.parse(dataStr); } catch { return; }
-            if (json.error) {
-                const msg = typeof json.error === 'string' ? json.error : json.error.message || JSON.stringify(json.error);
-                throw new Error(msg + (json.code ? ' (código ' + json.code + ')' : ''));
-            }
-            const content = json.choices?.[0]?.delta?.content || '';
-            if (content) {
-                if (!firstTokenReceived) { firstTokenReceived = true; revealStreamUi(); }
-                aiAnalysis += content;
-                if (aiResponseDiv) {
-                    try { aiResponseDiv.innerHTML = marked.parse(aiAnalysis); }
-                    catch (mdErr) { aiResponseDiv.textContent = aiAnalysis; }
-                }
+        function parseSSE(s) {
+            if (s === '[DONE]') return;
+            let j; try { j = JSON.parse(s); } catch { return; }
+            if (j.error) throw new Error(typeof j.error === 'string' ? j.error : JSON.stringify(j.error));
+            const c = j.choices?.[0]?.delta?.content || '';
+            if (c) {
+                if (!firstToken) { firstToken = true; revealStreamUi(); }
+                aiText += c;
+                if (bodyEl) try { bodyEl.innerHTML = marked.parse(aiText); } catch { bodyEl.textContent = aiText; }
             }
         }
 
@@ -385,28 +295,20 @@ async function analyzeHistory() {
             sseBuffer = lines.pop() || '';
             for (let line of lines) {
                 line = line.replace(/\r$/, '');
-                if (!line.startsWith('data: ')) continue;
-                const data = line.slice(6).trim();
-                if (data) parseSseDataPayload(data);
+                if (line.startsWith('data: ')) parseSSE(line.slice(6).trim());
             }
             if (done) {
-                if (sseBuffer.trim()) {
-                    const last = sseBuffer.replace(/\r$/, '');
-                    if (last.startsWith('data: ')) parseSseDataPayload(last.slice(6).trim());
-                }
+                if (sseBuffer.trim() && sseBuffer.startsWith('data: ')) parseSSE(sseBuffer.slice(6).trim());
                 break;
             }
         }
 
-        if (firstTokenReceived) markStreamDone();
-        if (!aiAnalysis.trim()) {
-            analysisContent.innerHTML = '<p style="color: #9ca3af;">A IA não devolveu texto. Verifique se o token HuggingFace está configurado no .env</p>';
-        }
+        if (firstToken) markDone();
+        if (!aiText.trim()) analysisContent.innerHTML = '<p style="color:var(--text-dim)">IA não retornou texto. Verifique o HF_API_TOKEN no .env</p>';
 
         await fetchPositionSignal();
-    } catch (error) {
-        analysisContent.innerHTML =
-            '<p style="color: #ef4444;">Erro ao gerar análise: ' + (error?.message || String(error)) + '</p>';
+    } catch (err) {
+        analysisContent.innerHTML = `<p style="color:var(--red)">Erro: ${err?.message || err}</p>`;
     } finally {
         if (btnAi) btnAi.disabled = false;
     }
@@ -415,90 +317,73 @@ async function analyzeHistory() {
 // ==================== WALLET ====================
 
 async function loadWallets() {
-    const walletSelect = document.getElementById('walletSelect');
+    const sel = document.getElementById('walletSelect');
     try {
         const { ok, data } = await safeFetch(`${API_BASE}/api/wallets`);
-        if (!ok) {
-            walletSelect.innerHTML = '<option value="">Backend offline</option>';
-            return;
-        }
+        if (!ok) { sel.innerHTML = '<option value="">backend offline</option>'; return; }
         if (!data.success) return;
 
-        walletSelect.innerHTML = '<option value="">-- Selecione --</option>';
-        data.wallets.forEach(wallet => {
-            const option = document.createElement('option');
-            option.value = wallet.address;
-            option.textContent = `${wallet.name} (${wallet.address.substring(0, 12)}...)`;
-            walletSelect.appendChild(option);
+        sel.innerHTML = '<option value="">selecione carteira</option>';
+        data.wallets.forEach(w => {
+            const opt = document.createElement('option');
+            opt.value = w.address;
+            opt.textContent = `${w.name} (${w.address.substring(0, 12)}...)`;
+            sel.appendChild(opt);
         });
 
-        // Restaura a carteira salva anteriormente
         const saved = localStorage.getItem(STORAGE_KEY_WALLET);
         if (saved) {
-            walletSelect.value = saved;
-            if (walletSelect.value === saved) {
-                loadBalances();
-            } else {
-                // Endereço salvo não existe mais na lista
-                localStorage.removeItem(STORAGE_KEY_WALLET);
-            }
+            sel.value = saved;
+            if (sel.value === saved) loadBalances();
+            else localStorage.removeItem(STORAGE_KEY_WALLET);
         }
-    } catch (error) {
-        console.error('Erro ao carregar carteiras:', error);
-        walletSelect.innerHTML = '<option value="">Backend offline - Execute: python3 backend/wallet.py</option>';
+    } catch {
+        sel.innerHTML = '<option value="">backend offline</option>';
     }
 }
 
 async function loadBalances() {
-    const walletSelect   = document.getElementById('walletSelect');
-    const selectedAddress = walletSelect.value;
-    if (!selectedAddress) return;
+    const sel     = document.getElementById('walletSelect');
+    const address = sel.value;
+    const actions = document.getElementById('walletActions');
 
-    // Persiste a seleção
-    localStorage.setItem(STORAGE_KEY_WALLET, selectedAddress);
+    if (!address) {
+        actions.classList.remove('visible');
+        return;
+    }
+
+    localStorage.setItem(STORAGE_KEY_WALLET, address);
+    actions.classList.add('visible');
 
     const balancesDiv = document.getElementById('balances');
-
     try {
-        balancesDiv.innerHTML = '<div style="text-align: center; padding: 20px;"><div class="loader"></div></div>';
-        const { ok, data } = await safeFetch(`${API_BASE}/api/balance/${selectedAddress}`);
+        balancesDiv.innerHTML = '<div style="padding:14px 0;font-family:var(--mono);font-size:0.7rem;color:var(--text-dim)"><div class="loader" style="display:inline-block"></div></div>';
+        const { ok, data } = await safeFetch(`${API_BASE}/api/balance/${address}`);
 
         if (!ok || !data.success) {
-            balancesDiv.innerHTML = `<p style="color: #ef4444; text-align: center;">Erro: ${data?.error || 'Erro ao carregar saldos'}</p>`;
+            balancesDiv.innerHTML = `<p style="color:var(--red);font-family:var(--mono);font-size:0.7rem;padding:14px 0">Erro: ${data?.error || 'falha ao carregar'}</p>`;
             return;
         }
 
-        if (data.balances && data.balances.length > 0) {
-            let html = '';
-            data.balances.forEach(balance => {
-                let denom = balance.denom;
-                let displayDenom;
-                if (denom === 'uosmo') {
-                    displayDenom = 'OSMO';
-                } else if (denom.startsWith('ibc/')) {
-                    displayDenom = 'IBC/' + denom.substring(4, 12) + '...';
-                } else if (denom.startsWith('gamm/pool/')) {
-                    displayDenom = 'Pool #' + denom.split('/')[2];
-                } else {
-                    displayDenom = denom.substring(0, 20);
-                }
-                const amount = (parseInt(balance.amount) / 1000000).toFixed(6);
-                html += `
-                    <div class="balance-item">
-                        <span class="balance-denom" title="${denom}">${displayDenom}</span>
-                        <span class="balance-amount">${amount}</span>
-                    </div>`;
-            });
-            balancesDiv.innerHTML = html;
+        if (data.balances?.length > 0) {
+            balancesDiv.innerHTML = data.balances.map(b => {
+                let denom = b.denom, display;
+                if (denom === 'uosmo') display = 'OSMO';
+                else if (denom.startsWith('ibc/')) display = 'IBC/' + denom.substring(4, 12) + '...';
+                else if (denom.startsWith('gamm/pool/')) display = 'Pool #' + denom.split('/')[2];
+                else display = denom.substring(0, 20);
+                const amount = (parseInt(b.amount) / 1_000_000).toFixed(6);
+                return `<div class="balance-item"><span class="balance-denom" title="${denom}">${display}</span><span class="balance-amount">${amount}</span></div>`;
+            }).join('');
         } else {
-            balancesDiv.innerHTML = '<p style="color: #9ca3af; text-align: center;">Nenhum saldo encontrado</p>';
+            balancesDiv.innerHTML = '<p style="color:var(--text-dim);font-family:var(--mono);font-size:0.7rem;padding:14px 0">nenhum saldo encontrado</p>';
         }
-    } catch (error) {
-        console.error('Erro ao carregar saldos:', error);
-        balancesDiv.innerHTML = `<p style="color: #ef4444; text-align: center;">Erro: ${error.message}</p>`;
+    } catch (err) {
+        balancesDiv.innerHTML = `<p style="color:var(--red);font-family:var(--mono);font-size:0.7rem;padding:14px 0">Erro: ${err.message}</p>`;
     }
 }
 
+// ==================== SWAP MODAL ====================
 
 let swapGasTimer = null;
 
@@ -513,7 +398,7 @@ async function fetchSwapGasInfo() {
             label.innerHTML =
                 `Gas price: <span class="gas-val">${data.gas_prices}</span> &nbsp;|&nbsp; ` +
                 `Ajuste: <span class="gas-val">${data.gas_adjustment}x</span> &nbsp;|&nbsp; ` +
-                `Tolerância slippage: <span class="gas-val">${data.slippage_pct}%</span>`;
+                `Slippage: <span class="gas-val">${data.slippage_pct}%</span>`;
         }
     } catch (_) {}
 }
@@ -533,73 +418,147 @@ function closeSwapModal(event) {
 }
 
 async function executeSwap() {
-    const fromToken      = document.getElementById('swapFrom').value;
-    const toToken        = document.getElementById('swapTo').value;
-    const amount         = document.getElementById('swapAmount').value;
-    const selectedAddress = document.getElementById('walletSelect').value;
-    const statusDiv      = document.getElementById('swapStatus');
+    const from    = document.getElementById('swapFrom').value;
+    const to      = document.getElementById('swapTo').value;
+    const amount  = document.getElementById('swapAmount').value;
+    const address = document.getElementById('walletSelect').value;
+    const status  = document.getElementById('swapStatus');
 
-    if (!amount || parseFloat(amount) <= 0) {
-        statusDiv.textContent = 'Digite uma quantidade válida';
-        statusDiv.style.color = '#ef4444';
-        return;
-    }
-
-    if (!selectedAddress) {
-        statusDiv.textContent = 'Selecione uma carteira primeiro';
-        statusDiv.style.color = '#ef4444';
-        return;
-    }
-
-    if (!confirm(`Confirma o swap de ${amount} ${fromToken === 'uosmo' ? 'OSMO' : 'USDC'}?`)) return;
+    if (!amount || parseFloat(amount) <= 0) { status.textContent = 'Digite uma quantidade válida'; status.style.color = 'var(--red)'; return; }
+    if (!address) { status.textContent = 'Selecione uma carteira primeiro'; status.style.color = 'var(--red)'; return; }
+    if (!confirm(`Confirma o swap de ${amount} ${from === 'uosmo' ? 'OSMO' : 'USDC'}?`)) return;
 
     try {
-        statusDiv.textContent = 'Executando swap...';
-        statusDiv.style.color = '#9ca3af';
-
-        const amountMicro = Math.floor(parseFloat(amount) * 1000000);
-        const response = await fetch(`${API_BASE}/api/swap/execute`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ from: fromToken, to: toToken, amount: amountMicro, address: selectedAddress })
+        status.textContent = 'executando swap...'; status.style.color = 'var(--text-muted)';
+        const res  = await fetch(`${API_BASE}/api/swap/execute`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ from, to, amount: Math.floor(parseFloat(amount) * 1_000_000), address })
         });
-        const data = await response.json();
-
+        const data = await res.json();
         if (data.success) {
-            statusDiv.textContent = 'Swap executado com sucesso!';
-            statusDiv.style.color = '#10b981';
-            setTimeout(() => {
-                loadBalances();
-                closeSwapModal();
-            }, 1500);
+            status.textContent = 'swap executado com sucesso!'; status.style.color = 'var(--green)';
+            setTimeout(() => { loadBalances(); closeSwapModal(); }, 1500);
         } else {
-            statusDiv.textContent = 'Erro: ' + data.error;
-            statusDiv.style.color = '#ef4444';
+            status.textContent = 'Erro: ' + data.error; status.style.color = 'var(--red)';
         }
-    } catch (error) {
-        statusDiv.textContent = 'Erro ao executar: ' + error.message;
-        statusDiv.style.color = '#ef4444';
+    } catch (err) {
+        status.textContent = 'Erro: ' + err.message; status.style.color = 'var(--red)';
     }
 }
+
+// ==================== WALLET MODAL ====================
+
+function openWalletModal(tab) {
+    const address = document.getElementById('walletSelect').value;
+    const modal   = document.getElementById('walletModal');
+
+    // Preenche info da aba excluir
+    const nameEl = document.getElementById('deleteWalletName');
+    if (nameEl) nameEl.textContent = address || '(nenhuma carteira selecionada)';
+
+    // Limpa status
+    document.getElementById('restoreStatus').textContent = '';
+    document.getElementById('deleteStatus').textContent  = '';
+    document.getElementById('restoreName').value     = '';
+    document.getElementById('restoreMnemonic').value = '';
+
+    switchWalletTab(tab || 'restore');
+    modal.classList.add('show');
+}
+
+function closeWalletModal(event) {
+    if (event && event.target !== document.getElementById('walletModal')) return;
+    document.getElementById('walletModal').classList.remove('show');
+}
+
+function switchWalletTab(tab) {
+    document.querySelectorAll('.wallet-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
+    document.querySelectorAll('.wallet-tab-panel').forEach(p => p.classList.toggle('active', p.id === 'tab' + tab.charAt(0).toUpperCase() + tab.slice(1)));
+}
+
+async function restoreWallet() {
+    const name     = document.getElementById('restoreName').value.trim();
+    const mnemonic = document.getElementById('restoreMnemonic').value.trim();
+    const status   = document.getElementById('restoreStatus');
+    const btn      = document.getElementById('btnRestore');
+
+    if (!name)     { status.textContent = 'Informe o nome da chave'; status.style.color = 'var(--red)'; return; }
+    if (!mnemonic) { status.textContent = 'Informe o mnemônico'; status.style.color = 'var(--red)'; return; }
+
+    try {
+        btn.disabled = true;
+        status.textContent = 'restaurando...'; status.style.color = 'var(--text-muted)';
+
+        const res  = await fetch(`${API_BASE}/api/wallet/restore`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name, mnemonic })
+        });
+        const data = await res.json();
+
+        if (data.success) {
+            status.textContent = `Carteira "${name}" restaurada com sucesso!`; status.style.color = 'var(--green)';
+            setTimeout(async () => { await loadWallets(); closeWalletModal(); }, 1500);
+        } else {
+            status.textContent = 'Erro: ' + data.error; status.style.color = 'var(--red)';
+        }
+    } catch (err) {
+        status.textContent = 'Erro: ' + err.message; status.style.color = 'var(--red)';
+    } finally {
+        btn.disabled = false;
+    }
+}
+
+async function deleteWallet() {
+    const address = document.getElementById('walletSelect').value;
+    const status  = document.getElementById('deleteStatus');
+    const btn     = document.getElementById('btnDelete');
+
+    if (!address) { status.textContent = 'Nenhuma carteira selecionada'; status.style.color = 'var(--red)'; return; }
+    if (!confirm('Tem certeza? Esta ação remove a chave do keyring permanentemente.')) return;
+
+    try {
+        btn.disabled = true;
+        status.textContent = 'excluindo...'; status.style.color = 'var(--text-muted)';
+
+        const res  = await fetch(`${API_BASE}/api/wallet/delete`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ address })
+        });
+        const data = await res.json();
+
+        if (data.success) {
+            status.textContent = 'Chave excluída com sucesso.'; status.style.color = 'var(--green)';
+            localStorage.removeItem(STORAGE_KEY_WALLET);
+            setTimeout(async () => { await loadWallets(); closeWalletModal(); }, 1500);
+        } else {
+            status.textContent = 'Erro: ' + data.error; status.style.color = 'var(--red)';
+        }
+    } catch (err) {
+        status.textContent = 'Erro: ' + err.message; status.style.color = 'var(--red)';
+    } finally {
+        btn.disabled = false;
+    }
+}
+
+// ==================== INIT ====================
 
 window.addEventListener('load', () => {
     startAutoUpdate();
     loadWallets();
     refreshPriceChart();
     chartRefreshTimer = setInterval(refreshPriceChart, 30000);
-    
-    // Restaura o estado do gráfico
-    const savedExpanded = localStorage.getItem(STORAGE_KEY_CHART_EXPANDED);
-    if (savedExpanded !== null) {
-        chartExpanded = savedExpanded === 'true';
+
+    const saved = localStorage.getItem(STORAGE_KEY_CHART);
+    if (saved !== null) {
+        chartExpanded = saved === 'true';
         if (!chartExpanded) {
             const content = document.getElementById('chartContent');
-            const timeframes = document.getElementById('chartTimeframes');
-            const caret = document.getElementById('chartToggleIcon');
-            const header = document.querySelector('.chart-header');
+            const tf      = document.getElementById('chartTimeframes');
+            const caret   = document.getElementById('chartToggleIcon');
+            const header  = document.querySelector('.chart-header');
             content.classList.add('collapsed');
-            timeframes.style.display = 'none';
-            if (caret) caret.classList.add('collapsed');
+            tf.style.display = 'none';
+            if (caret)  caret.classList.add('collapsed');
             if (header) header.classList.add('collapsed');
         }
     }

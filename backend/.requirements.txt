@@ -1,0 +1,9 @@
+# Servidor web
+flask>=3.0.0
+flask-cors>=4.0.0
+
+# Requisições HTTP (preço, CoinEx, HuggingFace)
+requests>=2.31.0
+
+# Geração de ícones PWA (generate-icons.py)
+Pillow>=10.0.0

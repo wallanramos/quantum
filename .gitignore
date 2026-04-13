@@ -2,6 +2,5 @@ venv/
 .aliases
 .htaccess
 .iniciar.sh
-.requirements.txt
 __pycache__
 .env
