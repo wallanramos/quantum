@@ -1,0 +1,211 @@
+[
+  {
+    "timestamp": "2026-04-14T03:54:00.123376+00:00",
+    "address": "osmo14v5wh9pmtsuus5a52fehwhpev5nl5jjdr4pkga",
+    "timeframe": "1h",
+    "success": true,
+    "error": null,
+    "signal": "ESPERA",
+    "preco": 0.03084,
+    "posicao": "vendido/sem_posicao",
+    "saldo": {
+      "osmo": 2.987832,
+      "usdc": 0.21352
+    },
+    "ema9": 0.030688,
+    "ema21": 0.030906,
+    "tendencia": "BAIXA",
+    "lucro_usdc": 0.0,
+    "analise_texto": "Sinal: ESPERA | Preço: $0.0308 | EMA9: 0.0307 | EMA21: 0.0309 | Posição: vendido/sem_posicao"
+  },
+  {
+    "timestamp": "2026-04-14T04:54:05.279704+00:00",
+    "address": "osmo14v5wh9pmtsuus5a52fehwhpev5nl5jjdr4pkga",
+    "timeframe": "1h",
+    "success": true,
+    "error": null,
+    "signal": "ESPERA",
+    "preco": 0.03089,
+    "posicao": "vendido/sem_posicao",
+    "saldo": {
+      "osmo": 2.987832,
+      "usdc": 0.21352
+    },
+    "ema9": 0.030772,
+    "ema21": 0.030961,
+    "tendencia": "BAIXA",
+    "lucro_usdc": 0.0,
+    "analise_texto": "Sinal: ESPERA | Preço: $0.0309 | EMA9: 0.0308 | EMA21: 0.0310 | Posição: vendido/sem_posicao"
+  },
+  {
+    "timestamp": "2026-04-14T05:54:11.150852+00:00",
+    "address": "osmo14v5wh9pmtsuus5a52fehwhpev5nl5jjdr4pkga",
+    "timeframe": "1h",
+    "success": true,
+    "error": null,
+    "signal": "ESPERA",
+    "preco": 0.03084,
+    "posicao": "vendido/sem_posicao",
+    "saldo": {
+      "osmo": 2.987832,
+      "usdc": 0.21352
+    },
+    "ema9": 0.030877,
+    "ema21": 0.031022,
+    "tendencia": "BAIXA",
+    "lucro_usdc": 0.0,
+    "analise_texto": "Sinal: ESPERA | Preço: $0.0308 | EMA9: 0.0309 | EMA21: 0.0310 | Posição: vendido/sem_posicao"
+  },
+  {
+    "timestamp": "2026-04-14T06:54:18.051397+00:00",
+    "address": "osmo14v5wh9pmtsuus5a52fehwhpev5nl5jjdr4pkga",
+    "timeframe": "1h",
+    "success": true,
+    "error": null,
+    "signal": "ESPERA",
+    "preco": 0.03089,
+    "posicao": "vendido/sem_posicao",
+    "saldo": {
+      "osmo": 2.987832,
+      "usdc": 0.21352
+    },
+    "ema9": 0.030959,
+    "ema21": 0.031069,
+    "tendencia": "BAIXA",
+    "lucro_usdc": 0.0,
+    "analise_texto": "Sinal: ESPERA | Preço: $0.0309 | EMA9: 0.0310 | EMA21: 0.0311 | Posição: vendido/sem_posicao"
+  },
+  {
+    "timestamp": "2026-04-14T07:54:24.823637+00:00",
+    "address": "osmo14v5wh9pmtsuus5a52fehwhpev5nl5jjdr4pkga",
+    "timeframe": "1h",
+    "success": true,
+    "error": null,
+    "signal": "ESPERA",
+    "preco": 0.03094,
+    "posicao": "vendido/sem_posicao",
+    "saldo": {
+      "osmo": 2.987832,
+      "usdc": 0.21352
+    },
+    "ema9": 0.031015,
+    "ema21": 0.031103,
+    "tendencia": "BAIXA",
+    "lucro_usdc": 0.0,
+    "analise_texto": "Sinal: ESPERA | Preço: $0.0309 | EMA9: 0.0310 | EMA21: 0.0311 | Posição: vendido/sem_posicao"
+  },
+  {
+    "timestamp": "2026-04-14T08:54:30.507801+00:00",
+    "address": "osmo14v5wh9pmtsuus5a52fehwhpev5nl5jjdr4pkga",
+    "timeframe": "1h",
+    "success": true,
+    "error": null,
+    "signal": "ESPERA",
+    "preco": 0.03094,
+    "posicao": "vendido/sem_posicao",
+    "saldo": {
+      "osmo": 2.987832,
+      "usdc": 0.21352
+    },
+    "ema9": 0.031085,
+    "ema21": 0.031139,
+    "tendencia": "BAIXA",
+    "lucro_usdc": 0.0,
+    "analise_texto": "Sinal: ESPERA | Preço: $0.0309 | EMA9: 0.0311 | EMA21: 0.0311 | Posição: vendido/sem_posicao"
+  },
+  {
+    "timestamp": "2026-04-14T09:54:36.584162+00:00",
+    "address": "osmo14v5wh9pmtsuus5a52fehwhpev5nl5jjdr4pkga",
+    "timeframe": "1h",
+    "success": true,
+    "error": null,
+    "signal": "ESPERA",
+    "preco": 0.03094,
+    "posicao": "vendido/sem_posicao",
+    "saldo": {
+      "osmo": 2.987832,
+      "usdc": 0.21352
+    },
+    "ema9": 0.03116,
+    "ema21": 0.031175,
+    "tendencia": "BAIXA",
+    "lucro_usdc": 0.0,
+    "analise_texto": "Sinal: ESPERA | Preço: $0.0309 | EMA9: 0.0312 | EMA21: 0.0312 | Posição: vendido/sem_posicao"
+  },
+  {
+    "timestamp": "2026-04-14T10:54:42.871220+00:00",
+    "address": "osmo14v5wh9pmtsuus5a52fehwhpev5nl5jjdr4pkga",
+    "timeframe": "1h",
+    "success": true,
+    "error": null,
+    "signal": "ESPERA",
+    "preco": 0.030757,
+    "posicao": "vendido/sem_posicao",
+    "saldo": {
+      "osmo": 2.987832,
+      "usdc": 0.21352
+    },
+    "ema9": 0.031187,
+    "ema21": 0.031187,
+    "tendencia": "BAIXA",
+    "lucro_usdc": 0.0,
+    "analise_texto": "Sinal: ESPERA | Preço: $0.0308 | EMA9: 0.0312 | EMA21: 0.0312 | Posição: vendido/sem_posicao"
+  },
+  {
+    "timestamp": "2026-04-14T11:54:49.969823+00:00",
+    "address": "osmo14v5wh9pmtsuus5a52fehwhpev5nl5jjdr4pkga",
+    "timeframe": "1h",
+    "success": true,
+    "error": null,
+    "signal": "COMPRA",
+    "preco": 0.030617,
+    "posicao": "vendido/sem_posicao",
+    "saldo": {
+      "osmo": 2.987832,
+      "usdc": 0.21352
+    },
+    "ema9": 0.031221,
+    "ema21": 0.031201,
+    "tendencia": "ALTA",
+    "lucro_usdc": 0.0,
+    "analise_texto": "Sinal: COMPRA | Preço: $0.0306 | EMA9: 0.0312 | EMA21: 0.0312 | Posição: vendido/sem_posicao"
+  },
+  {
+    "timestamp": "2026-04-14T12:54:56.863922+00:00",
+    "address": "osmo14v5wh9pmtsuus5a52fehwhpev5nl5jjdr4pkga",
+    "timeframe": "1h",
+    "success": true,
+    "error": null,
+    "signal": "COMPRA",
+    "preco": 0.030558,
+    "posicao": "vendido/sem_posicao",
+    "saldo": {
+      "osmo": 2.987832,
+      "usdc": 0.21352
+    },
+    "ema9": 0.031264,
+    "ema21": 0.031216,
+    "tendencia": "ALTA",
+    "lucro_usdc": 0.0,
+    "analise_texto": "Sinal: COMPRA | Preço: $0.0306 | EMA9: 0.0313 | EMA21: 0.0312 | Posição: vendido/sem_posicao"
+  },
+  {
+    "timestamp": "2026-04-14T13:55:03.250267+00:00",
+    "address": "osmo14v5wh9pmtsuus5a52fehwhpev5nl5jjdr4pkga",
+    "timeframe": "1h",
+    "success": true,
+    "error": null,
+    "signal": "COMPRA",
+    "preco": 0.030667,
+    "posicao": "vendido/sem_posicao",
+    "saldo": {
+      "osmo": 2.987832,
+      "usdc": 0.21352
+    },
+    "ema9": 0.031317,
+    "ema21": 0.031233,
+    "tendencia": "ALTA",
+    "lucro_usdc": 0.0,
+    "analise_texto": "Sinal: COMPRA | Preço: $0.0307 | EMA9: 0.0313 | EMA21: 0.0312 | Posição: vendido/sem_posicao"
+  }
+]

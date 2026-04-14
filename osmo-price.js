@@ -1,35 +1,44 @@
-let updateInterval    = null;
-let lwChart           = null;
+let updateInterval = null;
+let lwChart = null;
 let chartResizeHandler = null;
-let rawPriceHistory   = [];
+let rawPriceHistory = [];
 let currentChartTimeframe = '1h';
 let chartRefreshTimer = null;
-let chartExpanded     = true;
+let chartExpanded = true;
+let schedulerPollTimer = null;
 
 const CHART_RANGE_MS = {
-    '1m':  60 * 1000,
+    '1m': 60 * 1000,
     '15m': 15 * 60 * 1000,
-    '1h':  60 * 60 * 1000
+    '1h': 60 * 60 * 1000
 };
 
-const API_BASE          = `${window.location.protocol}//${window.location.hostname}:5000`;
+const SCHEDULER_INTERVALS = {
+    '1m': 60,
+    '15m': 15 * 60,
+    '1h': 60 * 60,
+    '4h': 4 * 60 * 60,
+    '1d': 24 * 60 * 60,
+};
+
+const API_BASE = `${window.location.protocol}//${window.location.hostname}:5000`;
 const STORAGE_KEY_WALLET = 'quantum_selected_wallet';
-const STORAGE_KEY_CHART  = 'quantum_chart_expanded';
+const STORAGE_KEY_CHART = 'quantum_chart_expanded';
 
 // ==================== CHART ====================
 
 function toggleChart(event) {
     if (event && event.target.closest('.timeframe-btn')) return;
-    const content    = document.getElementById('chartContent');
+    const content = document.getElementById('chartContent');
     const timeframes = document.getElementById('chartTimeframes');
-    const caret      = document.getElementById('chartToggleIcon');
-    const header     = document.querySelector('.chart-header');
+    const caret = document.getElementById('chartToggleIcon');
+    const header = document.querySelector('.chart-header');
     chartExpanded = !chartExpanded;
     localStorage.setItem(STORAGE_KEY_CHART, chartExpanded);
     if (chartExpanded) {
         content.classList.remove('collapsed');
         timeframes.style.display = 'flex';
-        if (caret)  caret.classList.remove('collapsed');
+        if (caret) caret.classList.remove('collapsed');
         if (header) header.classList.remove('collapsed');
         setTimeout(() => {
             if (lwChart) lwChart.applyOptions({ width: document.getElementById('priceChartContainer').clientWidth || 800 });
@@ -37,7 +46,7 @@ function toggleChart(event) {
     } else {
         content.classList.add('collapsed');
         timeframes.style.display = 'none';
-        if (caret)  caret.classList.add('collapsed');
+        if (caret) caret.classList.add('collapsed');
         if (header) header.classList.add('collapsed');
     }
 }
@@ -50,7 +59,7 @@ async function fetchPriceHistory(timeframe) {
             const data = await res.json();
             if (data.success && Array.isArray(data.history)) return data.history;
         }
-    } catch (_) {}
+    } catch (_) { }
     return [];
 }
 
@@ -71,7 +80,7 @@ function buildCandles(items) {
         const t = item.timestamp ? Math.floor(new Date(item.timestamp).getTime() / 1000) : null;
         if (!t || isNaN(t) || t <= 0) return null;
         const o = parseFloat(item.open), h = parseFloat(item.high),
-              l = parseFloat(item.low),  c = parseFloat(item.close);
+            l = parseFloat(item.low), c = parseFloat(item.close);
         if (!isFinite(o) || !isFinite(h) || !isFinite(l) || !isFinite(c)) return null;
         return { time: t, open: o, high: h, low: l, close: c };
     }).filter(Boolean).sort((a, b) => a.time - b.time);
@@ -87,7 +96,7 @@ function calculateEMA(candles, period) {
             for (let j = 0; j < period; j++) sum += candles[j].close;
             ema.push({ time: candles[i].time, value: sum / period });
         } else {
-            ema.push({ time: candles[i].time, value: (candles[i].close * mult) + (ema[i-1].value * (1 - mult)) });
+            ema.push({ time: candles[i].time, value: (candles[i].close * mult) + (ema[i - 1].value * (1 - mult)) });
         }
     }
     return ema;
@@ -95,8 +104,8 @@ function calculateEMA(candles, period) {
 
 function renderPriceChart() {
     const container = document.getElementById('priceChartContainer');
-    const emptyEl   = document.getElementById('chartEmpty');
-    const statusEl  = document.getElementById('chartStatus');
+    const emptyEl = document.getElementById('chartEmpty');
+    const statusEl = document.getElementById('chartStatus');
     const LW = typeof LightweightCharts !== 'undefined' ? LightweightCharts : null;
     if (!container) return;
     if (!LW || typeof LW.createChart !== 'function') {
@@ -119,14 +128,14 @@ function renderPriceChart() {
     destroyPriceChart();
     try {
         lwChart = LW.createChart(container, {
-            width:  container.clientWidth || 800,
+            width: container.clientWidth || 800,
             height: 300,
             layout: { background: { type: 'solid', color: '#080808' }, textColor: '#666', fontFamily: "'DM Mono', monospace" },
-            grid:   { vertLines: { color: '#141414' }, horzLines: { color: '#141414' } },
-            crosshair:       { mode: LW.CrosshairMode ? LW.CrosshairMode.Normal : 0 },
+            grid: { vertLines: { color: '#141414' }, horzLines: { color: '#141414' } },
+            crosshair: { mode: LW.CrosshairMode ? LW.CrosshairMode.Normal : 0 },
             rightPriceScale: { borderColor: '#1e1e1e', scaleMargins: { top: 0.08, bottom: 0.08 } },
-            timeScale:       { borderColor: '#1e1e1e', timeVisible: true, secondsVisible: false },
-            localization:    { priceFormatter: p => '$' + p.toFixed(4) }
+            timeScale: { borderColor: '#1e1e1e', timeVisible: true, secondsVisible: false },
+            localization: { priceFormatter: p => '$' + p.toFixed(4) }
         });
         lwChart.addCandlestickSeries({
             upColor: '#3dffa0', downColor: '#ff4d6a',
@@ -144,9 +153,9 @@ function renderPriceChart() {
         if (emptyEl) { emptyEl.classList.remove('hidden'); emptyEl.textContent = 'Erro: ' + err.message; }
         return;
     }
-    const tf    = currentChartTimeframe;
-    const delta = candles[candles.length-1].close - candles[0].open;
-    const pct   = candles[0].open !== 0 ? (delta / candles[0].open) * 100 : 0;
+    const tf = currentChartTimeframe;
+    const delta = candles[candles.length - 1].close - candles[0].open;
+    const pct = candles[0].open !== 0 ? (delta / candles[0].open) * 100 : 0;
     if (statusEl) statusEl.textContent =
         `CoinEx · ${candles.length} velas (${tf}) · ${delta >= 0 ? '+' : ''}${delta.toFixed(6)} (${delta >= 0 ? '+' : ''}${pct.toFixed(2)}%) · EMA9/21`;
 }
@@ -166,7 +175,7 @@ async function safeFetch(url, options = {}) {
     let data;
     try { data = JSON.parse(text); }
     catch {
-        throw new Error(`Resposta inválida. Status ${response.status}. Início: ${text.substring(0, 120).replace(/\n/g,' ')}`);
+        throw new Error(`Resposta inválida. Status ${response.status}. Início: ${text.substring(0, 120).replace(/\n/g, ' ')}`);
     }
     return { ok: response.ok, status: response.status, data };
 }
@@ -181,17 +190,17 @@ async function fetchOsmoPrice() {
 }
 
 async function updatePrice() {
-    const priceEl  = document.getElementById('price');
+    const priceEl = document.getElementById('price');
     const statusEl = document.getElementById('status');
     try {
-        priceEl.textContent  = '...';
+        priceEl.textContent = '...';
         statusEl.textContent = 'carregando...';
         const price = await fetchOsmoPrice();
-        priceEl.textContent  = price.toFixed(4);
+        priceEl.textContent = price.toFixed(4);
         statusEl.textContent = `atualizado em: ${new Date().toLocaleString('pt-BR')}`;
         await refreshPriceChart();
     } catch (err) {
-        priceEl.textContent  = 'erro';
+        priceEl.textContent = 'erro';
         statusEl.textContent = err.message;
     }
 }
@@ -204,13 +213,8 @@ function startAutoUpdate() {
 
 // ==================== IA — ANÁLISE POR FASES ====================
 
-/**
- * Monta o container de análise com as três seções de fase.
- * Retorna referências aos elementos criados.
- */
 function mountAnalysisUI(container) {
     container.innerHTML = `
-        <!-- FASE 1: Intenção -->
         <div class="ai-phase" id="phaseIntent">
             <div class="ai-phase-header">
                 <span class="ai-phase-icon" id="phaseIntentIcon">○</span>
@@ -218,8 +222,6 @@ function mountAnalysisUI(container) {
                 <span class="ai-phase-status" id="phaseIntentStatus">aguardando…</span>
             </div>
         </div>
-
-        <!-- FASE 2: Tools -->
         <div class="ai-phase" id="phaseTools">
             <div class="ai-phase-header">
                 <span class="ai-phase-icon" id="phaseToolsIcon">○</span>
@@ -228,8 +230,6 @@ function mountAnalysisUI(container) {
             </div>
             <div class="ai-tools-list" id="phaseToolsList"></div>
         </div>
-
-        <!-- FASE 3: Análise -->
         <div class="ai-phase" id="phaseAnalysis">
             <div class="ai-phase-header">
                 <span class="ai-phase-icon" id="phaseAnalysisIcon">○</span>
@@ -248,55 +248,46 @@ function mountAnalysisUI(container) {
 }
 
 function phaseActive(iconId, statusId, statusText) {
-    const icon   = document.getElementById(iconId);
+    const icon = document.getElementById(iconId);
     const status = document.getElementById(statusId);
-    if (icon)   { icon.textContent = '◉'; icon.style.color = 'var(--accent)'; }
+    if (icon) { icon.textContent = '◉'; icon.style.color = 'var(--accent)'; }
     if (status) { status.textContent = statusText; status.style.color = 'var(--text-muted)'; }
 }
 
 function phaseDone(iconId, statusId, statusText) {
-    const icon   = document.getElementById(iconId);
+    const icon = document.getElementById(iconId);
     const status = document.getElementById(statusId);
-    if (icon)   { icon.textContent = '●'; icon.style.color = 'var(--green)'; }
+    if (icon) { icon.textContent = '●'; icon.style.color = 'var(--green)'; }
     if (status) { status.textContent = statusText; status.style.color = 'var(--green)'; }
 }
 
 function phaseError(iconId, statusId, statusText) {
-    const icon   = document.getElementById(iconId);
+    const icon = document.getElementById(iconId);
     const status = document.getElementById(statusId);
-    if (icon)   { icon.textContent = '✕'; icon.style.color = 'var(--red)'; }
+    if (icon) { icon.textContent = '✕'; icon.style.color = 'var(--red)'; }
     if (status) { status.textContent = statusText; status.style.color = 'var(--red)'; }
 }
 
 function appendToolResult(toolName, result) {
     const list = document.getElementById('phaseToolsList');
     if (!list) return;
-
-    const TOOL_LABELS = {
-        tool_controle: 'Controle',
-        tool_swap:     'Swap',
-        tool_analise:  'Análise Técnica',
-    };
-
+    const TOOL_LABELS = { tool_controle: 'Controle', tool_swap: 'Swap', tool_analise: 'Análise Técnica' };
     const label = TOOL_LABELS[toolName] || toolName;
     const hasError = result && result.error;
-
-    // Monta preview compacto dos dados relevantes
     let preview = '';
     if (!hasError && result) {
         const lines = [];
-        if (result.saldo)         lines.push(`OSMO: ${result.saldo.osmo?.toFixed(4)} | USDC: ${result.saldo.usdc?.toFixed(4)}`);
-        if (result.posicao)       lines.push(`Posição: ${result.posicao}`);
+        if (result.saldo) lines.push(`OSMO: ${result.saldo.osmo?.toFixed(4)} | USDC: ${result.saldo.usdc?.toFixed(4)}`);
+        if (result.posicao) lines.push(`Posição: ${result.posicao}`);
         if (result.lucro_usdc != null) lines.push(`P&L USDC: ${result.lucro_usdc >= 0 ? '+' : ''}${result.lucro_usdc?.toFixed(4)}`);
-        if (result.preco_atual)   lines.push(`Preço: $${result.preco_atual?.toFixed(4)}`);
-        if (result.tendencia)     lines.push(`Tendência: ${result.tendencia}`);
-        if (result.ema9)          lines.push(`EMA9: ${result.ema9} | EMA21: ${result.ema21}`);
-        if (result.candles)       lines.push(`Candles: ${result.candles}`);
-        if (result.tx_hash)       lines.push(`TX: ${result.tx_hash?.substring(0, 20)}…`);
-        if (result.saldo_depois)  lines.push(`Novo saldo OSMO: ${result.saldo_depois.osmo?.toFixed(4)} | USDC: ${result.saldo_depois.usdc?.toFixed(4)}`);
+        if (result.preco_atual) lines.push(`Preço: $${result.preco_atual?.toFixed(4)}`);
+        if (result.tendencia) lines.push(`Tendência: ${result.tendencia}`);
+        if (result.ema9) lines.push(`EMA9: ${result.ema9} | EMA21: ${result.ema21}`);
+        if (result.candles) lines.push(`Candles: ${result.candles}`);
+        if (result.tx_hash) lines.push(`TX: ${result.tx_hash?.substring(0, 20)}…`);
+        if (result.saldo_depois) lines.push(`Novo saldo OSMO: ${result.saldo_depois.osmo?.toFixed(4)} | USDC: ${result.saldo_depois.usdc?.toFixed(4)}`);
         preview = lines.join(' · ');
     }
-
     const item = document.createElement('div');
     item.className = 'ai-tool-item' + (hasError ? ' ai-tool-error' : ' ai-tool-ok');
     item.innerHTML = `
@@ -307,64 +298,44 @@ function appendToolResult(toolName, result) {
 }
 
 async function analyzeHistory() {
-    const analysisDiv     = document.getElementById('analysis');
+    const analysisDiv = document.getElementById('analysis');
     const analysisContent = document.getElementById('analysisContent');
-    const btnAi           = document.getElementById('btnAnalyzeAi');
-    const address         = document.getElementById('walletSelect').value;
-
-    if (!address) {
-        alert('Selecione uma carteira antes de analisar.');
-        return;
-    }
-
+    const btnAi = document.getElementById('btnAnalyzeAi');
+    const address = document.getElementById('walletSelect').value;
+    if (!address) { alert('Selecione uma carteira antes de analisar.'); return; }
     try {
         if (btnAi) btnAi.disabled = true;
         analysisDiv.style.display = 'block';
-
         mountAnalysisUI(analysisContent);
         analysisDiv.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-
-        // ── Fase 1: Intenção ──────────────────────────────────
         phaseActive('phaseIntentIcon', 'phaseIntentStatus', 'conectando…');
-
         const url = `${API_BASE}/api/ai/analyze?timeframe=${currentChartTimeframe}&address=${encodeURIComponent(address)}`;
-        const res = await fetch(url, {
-            headers: { Accept: 'text/event-stream', 'Cache-Control': 'no-cache' },
-            cache: 'no-store'
-        });
-
+        const res = await fetch(url, { headers: { Accept: 'text/event-stream', 'Cache-Control': 'no-cache' }, cache: 'no-store' });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         if (!res.body) throw new Error('Streaming indisponível neste navegador.');
-
         phaseDone('phaseIntentIcon', 'phaseIntentStatus', 'intenção enviada');
-
-        // ── Leitura SSE ───────────────────────────────────────
-        const reader    = res.body.getReader();
-        const decoder   = new TextDecoder();
-        let sseBuffer   = '';
-        let aiText      = '';
-        let firstToken  = false;
-        let phase       = 'intent';
-
-        const bodyEl    = document.getElementById('aiStreamBody');
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let sseBuffer = '';
+        let aiText = '';
+        let firstToken = false;
+        let phase = 'intent';
+        const bodyEl = document.getElementById('aiStreamBody');
         const streamWrap = document.getElementById('aiStreamWrap');
-        const badge     = document.getElementById('aiStreamBadge');
+        const badge = document.getElementById('aiStreamBadge');
         const badgeText = document.getElementById('aiStreamBadgeText');
 
         function handlePhaseEvent(evt) {
             const p = evt.phase;
-
             if (p === 'intent') {
                 phaseActive('phaseIntentIcon', 'phaseIntentStatus', evt.message || 'analisando…');
-
             } else if (p === 'tools_called') {
                 phaseDone('phaseIntentIcon', 'phaseIntentStatus', `tools: ${(evt.tools || []).join(', ') || 'nenhuma'}`);
                 phaseActive('phaseToolsIcon', 'phaseToolsStatus', 'executando tools…');
                 phase = 'tools';
-
             } else if (p === 'tool_running') {
                 const LABELS = { tool_controle: 'Controle', tool_swap: 'Swap', tool_analise: 'Análise Técnica' };
-                const label  = LABELS[evt.tool] || evt.tool;
+                const label = LABELS[evt.tool] || evt.tool;
                 const el = document.getElementById(`toolRunning_${evt.tool}`);
                 if (!el) {
                     const row = document.createElement('div');
@@ -373,13 +344,10 @@ async function analyzeHistory() {
                     row.innerHTML = `<span class="ai-tool-name">${label}</span><span class="ai-tool-preview">executando…</span>`;
                     document.getElementById('phaseToolsList')?.appendChild(row);
                 }
-
             } else if (p === 'tool_result') {
-                // Remove o "executando" e substitui pelo resultado
                 const running = document.getElementById(`toolRunning_${evt.tool}`);
                 if (running) running.remove();
                 appendToolResult(evt.tool, evt.result);
-
             } else if (p === 'analysis') {
                 phaseDone('phaseToolsIcon', 'phaseToolsStatus', 'dados coletados');
                 phaseActive('phaseAnalysisIcon', 'phaseAnalysisStatus', evt.message || 'gerando análise…');
@@ -397,30 +365,20 @@ async function analyzeHistory() {
             }
             let j;
             try { j = JSON.parse(s); } catch { return; }
-
             if (j.error) {
                 const msg = typeof j.error === 'string' ? j.error : JSON.stringify(j.error);
-                if (phase === 'tools')    phaseError('phaseToolsIcon',    'phaseToolsStatus',    msg);
+                if (phase === 'tools') phaseError('phaseToolsIcon', 'phaseToolsStatus', msg);
                 if (phase === 'analysis') phaseError('phaseAnalysisIcon', 'phaseAnalysisStatus', msg);
-                else                      phaseError('phaseIntentIcon',   'phaseIntentStatus',   msg);
+                else phaseError('phaseIntentIcon', 'phaseIntentStatus', msg);
                 return;
             }
-
-            // Evento de fase
-            if (j.phase !== undefined) {
-                handlePhaseEvent(j);
-                return;
-            }
-
-            // Chunk de texto OpenAI (fase de análise)
+            if (j.phase !== undefined) { handlePhaseEvent(j); return; }
             const c = j.choices?.[0]?.delta?.content || '';
             if (c) {
-                if (!firstToken) { firstToken = true; }
+                if (!firstToken) firstToken = true;
                 aiText += c;
                 if (bodyEl) try { bodyEl.innerHTML = marked.parse(aiText); } catch { bodyEl.textContent = aiText; }
             }
-
-            // finish_reason
             if (j.choices?.[0]?.finish_reason === 'stop') {
                 phaseDone('phaseAnalysisIcon', 'phaseAnalysisStatus', 'concluído');
                 if (badge) badge.classList.add('done');
@@ -447,7 +405,6 @@ async function analyzeHistory() {
             phaseError('phaseAnalysisIcon', 'phaseAnalysisStatus', 'sem resposta da IA');
             if (bodyEl) bodyEl.innerHTML = '<p style="color:var(--text-dim)">IA não retornou texto. Verifique HF_API_TOKEN no .env</p>';
         }
-
     } catch (err) {
         const content = document.getElementById('analysisContent');
         if (content) content.innerHTML = `<p style="color:var(--red);font-family:var(--mono);font-size:0.75rem;">Erro: ${err?.message || err}</p>`;
@@ -483,7 +440,7 @@ async function loadWallets() {
 }
 
 async function loadBalances() {
-    const sel     = document.getElementById('walletSelect');
+    const sel = document.getElementById('walletSelect');
     const address = sel.value;
     const actions = document.getElementById('walletActions');
     if (!address) { actions.classList.remove('visible'); return; }
@@ -532,7 +489,7 @@ async function fetchSwapGasInfo() {
                 `Ajuste: <span class="gas-val">${data.gas_adjustment}x</span> &nbsp;|&nbsp; ` +
                 `Slippage: <span class="gas-val">${data.slippage_pct}%</span>`;
         }
-    } catch (_) {}
+    } catch (_) { }
 }
 
 function openSwapModal() {
@@ -550,19 +507,17 @@ function closeSwapModal(event) {
 }
 
 async function executeSwap() {
-    const from    = document.getElementById('swapFrom').value;
-    const to      = document.getElementById('swapTo').value;
-    const amount  = document.getElementById('swapAmount').value;
+    const from = document.getElementById('swapFrom').value;
+    const to = document.getElementById('swapTo').value;
+    const amount = document.getElementById('swapAmount').value;
     const address = document.getElementById('walletSelect').value;
-    const status  = document.getElementById('swapStatus');
-
+    const status = document.getElementById('swapStatus');
     if (!amount || parseFloat(amount) <= 0) { status.textContent = 'Digite uma quantidade válida'; status.style.color = 'var(--red)'; return; }
     if (!address) { status.textContent = 'Selecione uma carteira primeiro'; status.style.color = 'var(--red)'; return; }
     if (!confirm(`Confirma o swap de ${amount} ${from === 'uosmo' ? 'OSMO' : 'USDC'}?`)) return;
-
     try {
         status.textContent = 'executando swap…'; status.style.color = 'var(--text-muted)';
-        const res  = await fetch(`${API_BASE}/api/swap/execute`, {
+        const res = await fetch(`${API_BASE}/api/swap/execute`, {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ from, to, amount: Math.floor(parseFloat(amount) * 1_000_000), address })
         });
@@ -582,11 +537,11 @@ async function executeSwap() {
 
 function openWalletModal(tab) {
     const address = document.getElementById('walletSelect').value;
-    const nameEl  = document.getElementById('deleteWalletName');
+    const nameEl = document.getElementById('deleteWalletName');
     if (nameEl) nameEl.textContent = address || '(nenhuma carteira selecionada)';
     document.getElementById('restoreStatus').textContent = '';
-    document.getElementById('deleteStatus').textContent  = '';
-    document.getElementById('restoreName').value     = '';
+    document.getElementById('deleteStatus').textContent = '';
+    document.getElementById('restoreName').value = '';
     document.getElementById('restoreMnemonic').value = '';
     switchWalletTab(tab || 'restore');
     document.getElementById('walletModal').classList.add('show');
@@ -603,16 +558,16 @@ function switchWalletTab(tab) {
 }
 
 async function restoreWallet() {
-    const name     = document.getElementById('restoreName').value.trim();
+    const name = document.getElementById('restoreName').value.trim();
     const mnemonic = document.getElementById('restoreMnemonic').value.trim();
-    const status   = document.getElementById('restoreStatus');
-    const btn      = document.getElementById('btnRestore');
-    if (!name)     { status.textContent = 'Informe o nome da chave'; status.style.color = 'var(--red)'; return; }
+    const status = document.getElementById('restoreStatus');
+    const btn = document.getElementById('btnRestore');
+    if (!name) { status.textContent = 'Informe o nome da chave'; status.style.color = 'var(--red)'; return; }
     if (!mnemonic) { status.textContent = 'Informe o mnemônico'; status.style.color = 'var(--red)'; return; }
     try {
         btn.disabled = true;
         status.textContent = 'restaurando…'; status.style.color = 'var(--text-muted)';
-        const res  = await fetch(`${API_BASE}/api/wallet/restore`, {
+        const res = await fetch(`${API_BASE}/api/wallet/restore`, {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ name, mnemonic })
         });
@@ -632,14 +587,14 @@ async function restoreWallet() {
 
 async function deleteWallet() {
     const address = document.getElementById('walletSelect').value;
-    const status  = document.getElementById('deleteStatus');
-    const btn     = document.getElementById('btnDelete');
+    const status = document.getElementById('deleteStatus');
+    const btn = document.getElementById('btnDelete');
     if (!address) { status.textContent = 'Nenhuma carteira selecionada'; status.style.color = 'var(--red)'; return; }
     if (!confirm('Tem certeza? Esta ação remove a chave do keyring permanentemente.')) return;
     try {
         btn.disabled = true;
         status.textContent = 'excluindo…'; status.style.color = 'var(--text-muted)';
-        const res  = await fetch(`${API_BASE}/api/wallet/delete`, {
+        const res = await fetch(`${API_BASE}/api/wallet/delete`, {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ address })
         });
@@ -658,6 +613,202 @@ async function deleteWallet() {
     }
 }
 
+// ==================== SCHEDULER ====================
+
+async function fetchSchedulerStatus() {
+    try {
+        const { ok, data } = await safeFetch(`${API_BASE}/api/ai/scheduler/status`);
+        if (!ok) return;
+        renderSchedulerStatus(data);
+    } catch (_) { }
+}
+
+function renderSchedulerStatus(data) {
+    const badge = document.getElementById('schedulerBadge');
+    const btnStart = document.getElementById('btnSchedulerStart');
+    const btnStop = document.getElementById('btnSchedulerStop');
+    const info = document.getElementById('schedulerInfo');
+    if (!badge) return;
+    if (data.running) {
+        badge.textContent = '● ativo';
+        badge.style.color = 'var(--green)';
+        badge.style.borderColor = 'rgba(61,255,160,0.3)';
+        if (btnStart) btnStart.style.display = 'none';
+        if (btnStop) btnStop.style.display = '';
+        const parts = [];
+        if (data.last_run) parts.push(`última: ${new Date(data.last_run).toLocaleString('pt-BR')}`);
+        if (data.next_run) parts.push(`próxima: ${new Date(data.next_run).toLocaleString('pt-BR')}`);
+        if (data.last_signal) parts.push(`sinal: ${data.last_signal}`);
+        if (data.run_count) parts.push(`${data.run_count} análises`);
+        if (info) info.textContent = parts.join(' · ');
+    } else {
+        badge.textContent = '○ inativo';
+        badge.style.color = 'var(--text-dim)';
+        badge.style.borderColor = 'var(--border)';
+        if (btnStart) btnStart.style.display = '';
+        if (btnStop) btnStop.style.display = 'none';
+        if (info) info.textContent = data.last_error
+            ? `último erro: ${data.last_error}`
+            : data.last_run
+                ? `parado · última análise: ${new Date(data.last_run).toLocaleString('pt-BR')}`
+                : 'nunca executado';
+    }
+}
+
+async function startScheduler() {
+    const address = document.getElementById('walletSelect').value;
+    const tf = currentChartTimeframe || '1h';
+    if (!address) { alert('Selecione uma carteira primeiro.'); return; }
+    try {
+        const interval = SCHEDULER_INTERVALS[tf] || 0;
+        const { data } = await safeFetch(`${API_BASE}/api/ai/scheduler/start`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ address, timeframe: tf, interval }),
+        });
+        if (!data.success) { alert('Erro: ' + data.error); return; }
+        fetchSchedulerStatus();
+        fetchSchedulerHistory();
+        if (!schedulerPollTimer) {
+            schedulerPollTimer = setInterval(() => {
+                fetchSchedulerStatus();
+                fetchSchedulerHistory();
+            }, 30000);
+        }
+    } catch (err) { alert('Erro: ' + err.message); }
+}
+
+async function stopScheduler() {
+    try {
+        await safeFetch(`${API_BASE}/api/ai/scheduler/stop`, { method: 'POST' });
+        if (schedulerPollTimer) { clearInterval(schedulerPollTimer); schedulerPollTimer = null; }
+        setTimeout(fetchSchedulerStatus, 1000);
+    } catch (err) { alert('Erro: ' + err.message); }
+}
+
+async function fetchSchedulerHistory() {
+    try {
+        const { ok, data } = await safeFetch(`${API_BASE}/api/ai/scheduler/history?limit=48`);
+        if (!ok || !data.success) return;
+        renderSchedulerHistory(data.history, data.total);
+    } catch (_) { }
+}
+
+function signalColor(signal) {
+    if (signal === 'COMPRA') return 'var(--green)';
+    if (signal === 'VENDE') return 'var(--red)';
+    return 'var(--text-muted)';
+}
+
+// Controla qual entrada está expandida
+const _expandedEntries = new Set();
+
+function toggleEntryAnalise(id) {
+    const el = document.getElementById('analise_' + id);
+    if (!el) return;
+    if (_expandedEntries.has(id)) {
+        _expandedEntries.delete(id);
+        el.style.display = 'none';
+    } else {
+        _expandedEntries.add(id);
+        el.style.display = 'block';
+    }
+}
+
+function renderSchedulerHistory(items, total) {
+    const container = document.getElementById('schedulerHistory');
+    if (!container) return;
+    if (!items || items.length === 0) {
+        container.innerHTML = '<p style="font-family:var(--mono);font-size:0.7rem;color:var(--text-dim);padding:10px 0">nenhuma análise registrada ainda</p>';
+        return;
+    }
+    const totalEl = document.getElementById('schedulerTotal');
+    if (totalEl) totalEl.textContent = `${total} análises no histórico`;
+
+    container.innerHTML = items.map((entry, idx) => {
+        const id = `entry_${idx}`;
+        const ts = entry.timestamp ? new Date(entry.timestamp).toLocaleString('pt-BR') : '—';
+        const signal = entry.signal || '—';
+        const preco = entry.preco != null ? `$${Number(entry.preco).toFixed(4)}` : '—';
+        const posicao = entry.posicao || '—';
+        const lucro = entry.lucro_usdc != null
+            ? `${entry.lucro_usdc >= 0 ? '+' : ''}${Number(entry.lucro_usdc).toFixed(4)} USDC` : '—';
+        const ema9 = entry.ema9 != null ? Number(entry.ema9).toFixed(4) : '—';
+        const ema21 = entry.ema21 != null ? Number(entry.ema21).toFixed(4) : '—';
+        const tend = entry.tendencia || '—';
+        const osmo = entry.saldo?.osmo != null ? Number(entry.saldo.osmo).toFixed(4) : '—';
+        const usdc = entry.saldo?.usdc != null ? Number(entry.saldo.usdc).toFixed(4) : '—';
+        const erro = entry.error || '';
+
+        // tx_hash com link para mintscan
+        const txHash = entry.tx_hash || null;
+        const txHtml = txHash
+            ? `<a href="https://www.mintscan.io/osmosis/transactions/${txHash}"
+                  target="_blank" rel="noopener"
+                  style="font-family:var(--mono);font-size:0.72rem;color:var(--green);word-break:break-all;text-decoration:none;"
+                  title="${txHash}">
+                  ${txHash.substring(0, 20)}… ↗
+               </a>`
+            : null;
+
+        // Análise final da IA (markdown)
+        const analiseTexto = entry.analise_texto || null;
+        const analiseHtml = analiseTexto
+            ? (() => { try { return marked.parse(analiseTexto); } catch { return `<pre>${analiseTexto}</pre>`; } })()
+            : null;
+
+        return `
+        <div style="padding:14px 0;border-top:1px solid var(--border-subtle);">
+            <!-- Cabeçalho: data + sinal -->
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+                <span style="font-family:var(--mono);font-size:0.67rem;color:var(--text-dim)">${ts}</span>
+                <span style="font-family:var(--sans);font-size:0.72rem;font-weight:700;color:${signalColor(signal)}">${signal}</span>
+            </div>
+
+            <!-- Grid de métricas -->
+            <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:${txHash || analiseTexto ? '10px' : '0'};">
+                ${cell('preço', preco)}
+                ${cell('posição', posicao)}
+                ${cell('P&L', lucro)}
+                ${cell('EMA9', ema9)}
+                ${cell('EMA21', ema21)}
+                ${cell('tendência', tend)}
+                ${cell('OSMO', osmo)}
+                ${cell('USDC', usdc)}
+                ${!entry.success && erro ? cell('erro', erro, 'var(--red)') : ''}
+            </div>
+
+            <!-- TX hash (se houve swap) -->
+            ${txHash ? `
+            <div style="padding:8px 10px;background:rgba(61,255,160,0.03);border:1px solid rgba(61,255,160,0.1);border-radius:2px;margin-bottom:8px;">
+                <div style="font-family:var(--mono);font-size:0.58rem;letter-spacing:.1em;text-transform:uppercase;color:var(--text-dim);margin-bottom:4px">transação executada</div>
+                ${txHtml}
+            </div>` : ''}
+
+            <!-- Análise final da IA (colapsável) -->
+            ${analiseTexto ? `
+            <button onclick="toggleEntryAnalise('${id}')"
+                style="font-family:var(--mono);font-size:0.62rem;letter-spacing:.08em;text-transform:uppercase;
+                       color:var(--text-dim);background:none;border:1px solid var(--border-subtle);
+                       border-radius:2px;padding:5px 10px;cursor:pointer;margin-bottom:6px;transition:color .15s;">
+                ver análise completa
+            </button>
+            <div id="analise_${id}"
+                 style="display:none;padding:14px;background:rgba(255,255,255,0.02);
+                        border:1px solid var(--border-subtle);border-radius:2px;">
+                <div class="ai-response">${analiseHtml}</div>
+            </div>` : ''}
+        </div>`;
+    }).join('');
+}
+
+function cell(label, value, color) {
+    return `<div style="background:rgba(255,255,255,0.02);border:1px solid var(--border-subtle);border-radius:2px;padding:7px 10px;">
+        <div style="font-family:var(--mono);font-size:0.58rem;letter-spacing:.1em;text-transform:uppercase;color:var(--text-dim);margin-bottom:3px">${label}</div>
+        <div style="font-family:var(--mono);font-size:0.75rem;color:${color || 'var(--text)'}">${value}</div>
+    </div>`;
+}
+
 // ==================== INIT ====================
 
 window.addEventListener('load', () => {
@@ -665,7 +816,8 @@ window.addEventListener('load', () => {
     loadWallets();
     refreshPriceChart();
     chartRefreshTimer = setInterval(refreshPriceChart, 30000);
-
+    fetchSchedulerStatus();
+    fetchSchedulerHistory();
     const saved = localStorage.getItem(STORAGE_KEY_CHART);
     if (saved !== null) {
         chartExpanded = saved === 'true';
@@ -680,4 +832,5 @@ window.addEventListener('load', () => {
 
 window.addEventListener('beforeunload', () => {
     if (chartRefreshTimer) clearInterval(chartRefreshTimer);
+    if (schedulerPollTimer) clearInterval(schedulerPollTimer);
 });

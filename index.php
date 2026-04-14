@@ -598,18 +598,18 @@
             margin-bottom: 20px;
         }
 
-        /* ── RESPONSIVE ── */
-        @media (max-width: 600px) {
-            .app { padding: 0 20px; }
-            .price-main { font-size: 2.8rem; }
-            .price-row { gap: 12px; }
-            .btn { padding: 10px 18px; font-size: 0.7rem; }
-            .modal-content { padding: 24px; }
-            .modal-row { grid-template-columns: 1fr; }
-            .chart-header { gap: 12px; }
-            .chart-header-left { gap: 12px; flex-wrap: wrap; }
-            .topbar { flex-wrap: wrap; }
-            .topbar-right { width: 100%; justify-content: space-between; }
+        /* ── SCHEDULER ── */
+        .scheduler-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-family: var(--mono);
+            font-size: 0.62rem;
+            letter-spacing: 0.1em;
+            padding: 4px 10px;
+            border: 1px solid var(--border);
+            border-radius: 2px;
+            color: var(--text-dim);
         }
 
         /* ── AI PHASES ── */
@@ -711,6 +711,20 @@
         }
 
         .ai-tool-error .ai-tool-preview { color: var(--red); }
+
+        /* ── RESPONSIVE ── */
+        @media (max-width: 600px) {
+            .app { padding: 0 20px; }
+            .price-main { font-size: 2.8rem; }
+            .price-row { gap: 12px; }
+            .btn { padding: 10px 18px; font-size: 0.7rem; }
+            .modal-content { padding: 24px; }
+            .modal-row { grid-template-columns: 1fr; }
+            .chart-header { gap: 12px; }
+            .chart-header-left { gap: 12px; flex-wrap: wrap; }
+            .topbar { flex-wrap: wrap; }
+            .topbar-right { width: 100%; justify-content: space-between; }
+        }
     </style>
 </head>
 <body>
@@ -774,12 +788,35 @@
             </div>
         </div>
 
-        <!-- ANALYSIS SECTION -->
+        <!-- ANALYSIS SECTION (manual) -->
         <div id="analysis" class="analysis-container">
             <div class="section">
                 <div class="section-label">Análise de Mercado</div>
                 <div id="analysisContent"></div>
             </div>
+        </div>
+
+        <!-- SCHEDULER SECTION -->
+        <div class="section" id="schedulerSection">
+            <div class="section-label">Análise Automática</div>
+
+            <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:16px;">
+                <span class="scheduler-badge" id="schedulerBadge">○ inativo</span>
+                <button class="btn btn-accent" id="btnSchedulerStart" onclick="startScheduler()" style="padding:8px 18px;font-size:0.72rem;">
+                    Ativar (1h)
+                </button>
+                <button class="btn btn-danger" id="btnSchedulerStop" onclick="stopScheduler()" style="display:none;padding:8px 18px;font-size:0.72rem;">
+                    Parar
+                </button>
+            </div>
+
+            <div class="status-text" id="schedulerInfo" style="margin-bottom:20px;min-height:1.2em;"></div>
+
+            <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px;">
+                <span style="font-family:var(--mono);font-size:0.63rem;letter-spacing:.12em;text-transform:uppercase;color:var(--text-muted)">Histórico de sinais</span>
+                <span style="font-family:var(--mono);font-size:0.62rem;color:var(--text-dim)" id="schedulerTotal"></span>
+            </div>
+            <div id="schedulerHistory"></div>
         </div>
 
     </div>

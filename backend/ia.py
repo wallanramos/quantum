@@ -482,6 +482,105 @@ def stream_ai_analysis(address: str, timeframe: str = '15m'):
         yield _sse({'error': str(e)})
 
 
+# ── Agentic loop sem streaming ─────────────────────────────
+
+def run_agentic_loop(address: str, timeframe: str = '15m'):
+    token = hf_resolve_api_token()
+    if not token:
+        raise RuntimeError('Token Hugging Face não configurado')
+
+    headers = {
+        'Content-Type':  'application/json',
+        'Authorization': f'Bearer {token}',
+    }
+
+    messages = [
+        {'role': 'system', 'content': SYSTEM_MESSAGE},
+        {
+            'role': 'user',
+            'content': (
+                f'Analise o mercado OSMO agora para a carteira {address}. '
+                f'Timeframe: {timeframe}. '
+                f'Colete os dados necessários, avalie a situação e decida a melhor ação.'
+            )
+        },
+    ]
+
+    tool_results = {}
+
+    for _ in range(MAX_TOOL_ROUNDS):
+        try:
+            resp = requests.post(
+                HF_URL,
+                headers=headers,
+                json={
+                    'model':       HF_MODEL,
+                    'messages':    messages,
+                    'tools':       TOOLS,
+                    'tool_choice': 'auto',
+                    'temperature': 0.3,
+                    'max_tokens':  1000,
+                    'stream':      False,
+                },
+                timeout=HF_TIMEOUT,
+            )
+            resp.raise_for_status()
+        except requests.RequestException as e:
+            raise RuntimeError(f'Erro na Hugging Face: {e}')
+
+        choice = resp.json()['choices'][0]
+        msg = choice['message']
+        tool_calls = msg.get('tool_calls') or []
+
+        messages.append(msg)
+
+        if not tool_calls:
+            break
+
+        for tc in tool_calls:
+            tool_name = tc['function']['name']
+            tool_id = tc['id']
+            try:
+                tool_args = json.loads(tc['function']['arguments'])
+            except json.JSONDecodeError:
+                tool_args = {}
+
+            tool_result_str = _dispatch_tool(tool_name, tool_args)
+            try:
+                tool_result = json.loads(tool_result_str)
+            except Exception:
+                tool_result = {'error': 'Resultado da tool inválido'}
+
+            tool_results[tool_name] = tool_result
+            messages.append({
+                'role':         'tool',
+                'tool_call_id': tool_id,
+                'content':      tool_result_str,
+            })
+
+    try:
+        final_resp = requests.post(
+            HF_URL,
+            headers=headers,
+            json={
+                'model':       HF_MODEL,
+                'messages':    messages,
+                'temperature': HF_TEMPERATURE,
+                'max_tokens':  HF_MAX_TOKENS,
+                'stream':      False,
+            },
+            timeout=HF_TIMEOUT,
+        )
+        final_resp.raise_for_status()
+    except requests.RequestException as e:
+        raise RuntimeError(f'Erro na Hugging Face: {e}')
+
+    final_message = final_resp.json()['choices'][0]['message']
+    texto_final = final_message.get('content', '')
+
+    return texto_final, tool_results
+
+
 # ── Sinal rápido (sem streaming) ───────────────────────────────
 
 def get_position_signal(address: str, timeframe: str = '15m'):
