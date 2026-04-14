@@ -1,0 +1,6 @@
+index.php
+osmo-price.js
+backend/
+    ia.py
+    preco.py
+    wallet.py

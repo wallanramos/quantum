@@ -611,6 +611,106 @@
             .topbar { flex-wrap: wrap; }
             .topbar-right { width: 100%; justify-content: space-between; }
         }
+
+        /* ── AI PHASES ── */
+        .ai-phase {
+            padding: 16px 0;
+            border-bottom: 1px solid var(--border-subtle);
+        }
+
+        .ai-phase:last-child { border-bottom: none; }
+
+        .ai-phase-header {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .ai-phase-icon {
+            font-family: var(--mono);
+            font-size: 0.75rem;
+            color: var(--text-dim);
+            width: 14px;
+            flex-shrink: 0;
+            transition: color 0.2s;
+        }
+
+        .ai-phase-label {
+            font-family: var(--mono);
+            font-size: 0.65rem;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            color: var(--text-muted);
+            flex-shrink: 0;
+        }
+
+        .ai-phase-status {
+            font-family: var(--mono);
+            font-size: 0.65rem;
+            color: var(--text-dim);
+            margin-left: auto;
+            text-align: right;
+            transition: color 0.2s;
+        }
+
+        /* ── TOOL ITEMS ── */
+        .ai-tools-list {
+            margin-top: 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .ai-tool-item {
+            display: flex;
+            align-items: baseline;
+            gap: 10px;
+            padding: 8px 12px;
+            border-radius: 2px;
+            border: 1px solid var(--border-subtle);
+            background: rgba(255,255,255,0.01);
+        }
+
+        .ai-tool-item.ai-tool-ok {
+            border-color: rgba(61, 255, 160, 0.1);
+            background: rgba(61, 255, 160, 0.03);
+        }
+
+        .ai-tool-item.ai-tool-error {
+            border-color: var(--red-border);
+            background: var(--red-dim);
+        }
+
+        .ai-tool-item.ai-tool-running {
+            border-color: rgba(200, 245, 98, 0.1);
+            background: rgba(200, 245, 98, 0.02);
+            animation: toolPulse 1.4s ease-in-out infinite;
+        }
+
+        @keyframes toolPulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.55; }
+        }
+
+        .ai-tool-name {
+            font-family: var(--mono);
+            font-size: 0.65rem;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: var(--text);
+            flex-shrink: 0;
+            min-width: 110px;
+        }
+
+        .ai-tool-preview {
+            font-family: var(--mono);
+            font-size: 0.63rem;
+            color: var(--text-muted);
+            line-height: 1.5;
+            word-break: break-word;
+        }
+
+        .ai-tool-error .ai-tool-preview { color: var(--red); }
     </style>
 </head>
 <body>
