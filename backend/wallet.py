@@ -8,6 +8,7 @@ import json
 import subprocess
 import threading
 import time
+from pathlib import Path
 
 from flask import Flask, Response, jsonify, request, stream_with_context
 from flask_cors import CORS
@@ -31,6 +32,8 @@ from swap import (
     simulate_swap,
     load_trades,
 )
+
+KEY_MAPPING_FILE = Path(__file__).parent / 'key_mapping.json'
 
 app = Flask(__name__)
 CORS(
@@ -64,6 +67,17 @@ def _run_command(command):
         return None, 'Timeout', 1
     except Exception as e:
         return None, str(e), 1
+
+
+def _save_key_mapping():
+    """Persiste KEY_MAPPING em disco. Loga warning em caso de falha."""
+    try:
+        KEY_MAPPING_FILE.write_text(
+            json.dumps(KEY_MAPPING, ensure_ascii=False, indent=2),
+            encoding='utf-8',
+        )
+    except OSError as e:
+        app.logger.warning('Não foi possível salvar key_mapping.json: %s', e)
 
 
 # ── Rotas: Health & Preço ──────────────────────────────────────
@@ -161,6 +175,11 @@ def api_wallet_restore():
         except (json.JSONDecodeError, AttributeError):
             address = ''
 
+        # ── Atualiza key_mapping em memória e em disco ─────────
+        if address:
+            KEY_MAPPING[address] = name
+            _save_key_mapping()
+
         return jsonify({'success': True, 'name': name, 'address': address})
 
     except subprocess.TimeoutExpired:
@@ -195,7 +214,10 @@ def api_wallet_delete():
     if code != 0:
         return jsonify({'success': False, 'error': stderr.strip() or 'Erro ao excluir chave'})
 
+    # ── Atualiza key_mapping em memória e em disco ─────────────
     KEY_MAPPING.pop(address, None)
+    _save_key_mapping()
+
     return jsonify({'success': True, 'name': key_name})
 
 

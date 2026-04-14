@@ -9,7 +9,8 @@ Fluxo agentic loop (single-context):
   4. IA pode chamar mais tools (ex: tool_swap) com base nos dados
   5. Quando satisfeita, gera resposta final em streaming
 
-Tudo acontece no mesmo contexto de mensagens.
+Posição inferida pelo saldo real: se ≥80% do valor total está em OSMO → comprado.
+Quantidades: compra = 100% do saldo USDC / venda = saldo OSMO - 3 (reserva para gas).
 """
 import json
 import os
@@ -26,7 +27,9 @@ HF_TEMPERATURE  = 0.7
 HF_MAX_TOKENS   = 3000
 HF_TIMEOUT      = (15, 120)
 HF_URL          = 'https://router.huggingface.co/v1/chat/completions'
-MAX_TOOL_ROUNDS = 5  # segurança: máximo de rounds do agentic loop
+MAX_TOOL_ROUNDS = 5
+
+OSMO_GAS_RESERVE = 3.0  # OSMO reservados para gas nas vendas
 
 SYSTEM_MESSAGE = (
     'Você é um trader e analista financeiro especializado na blockchain Osmosis. '
@@ -34,9 +37,14 @@ SYSTEM_MESSAGE = (
     'Siga este fluxo obrigatório:\n'
     '1. Chame tool_controle para ver saldo, posição e P&L\n'
     '2. Chame tool_analise para obter dados técnicos (EMA, tendência, histórico)\n'
-    '3. Com base nos dados, decida: COMPRAR, VENDER ou AGUARDAR\n'
-    '4. Se decidir operar, chame tool_swap para executar\n'
-    '5. Apresente sua análise completa em markdown, incluindo:\n'
+    '3. REGRAS DE POSIÇÃO — siga estritamente:\n'
+    '   - Se posicao="comprado": NUNCA execute compra. Só pode VENDER ou AGUARDAR.\n'
+    '   - Se posicao="vendido/sem_posicao": NUNCA execute venda. Só pode COMPRAR ou AGUARDAR.\n'
+    '   - Ignorar esta regra causa perda de capital em taxas. É proibido.\n'
+    '4. Com base nos dados e nas regras acima, decida: COMPRAR, VENDER ou AGUARDAR\n'
+    '5. Se decidir operar, chame tool_swap para executar — NÃO informe quantidade,\n'
+    '   o sistema calcula automaticamente (compra=100% USDC, venda=saldo OSMO - 3 de reserva)\n'
+    '6. Apresente sua análise completa em markdown, incluindo:\n'
     '   - Situação atual do portfólio\n'
     '   - Análise técnica\n'
     '   - Decisão tomada e justificativa\n'
@@ -53,7 +61,7 @@ TOOLS = [
             'name': 'tool_controle',
             'description': (
                 'Retorna o estado atual da carteira: saldo OSMO e USDC, '
-                'posição atual (comprado ou vendido/sem_posicao), '
+                'posição atual (comprado ou vendido/sem_posicao) inferida pelo saldo real, '
                 'P&L em USDC desde o último trade, '
                 'preço atual do OSMO e resumo do histórico de klines.'
             ),
@@ -81,7 +89,7 @@ TOOLS = [
             'description': (
                 'Busca klines do OSMO, calcula EMA9 e EMA21, '
                 'retorna dados técnicos: tendência, preços, médias móveis, '
-                'saldo e posição atual da carteira.'
+                'saldo e posição atual da carteira inferida pelo saldo real.'
             ),
             'parameters': {
                 'type': 'object',
@@ -106,9 +114,11 @@ TOOLS = [
             'name': 'tool_swap',
             'description': (
                 'Executa um swap: compra (USDC→OSMO) ou venda (OSMO→USDC). '
-                'Persiste o trade no histórico com posição, timestamp, preço, '
-                'quantidade, saldo antes e depois. '
-                'Só chame esta tool se tiver certeza de que a operação é adequada.'
+                'A quantidade é calculada automaticamente pelo sistema: '
+                'compra = 100% do saldo USDC disponível, '
+                'venda = saldo OSMO disponível menos 3 OSMO de reserva para gas. '
+                'Não é necessário informar a quantidade. '
+                'Só chame se a posição atual permitir a operação.'
             ),
             'parameters': {
                 'type': 'object',
@@ -121,17 +131,9 @@ TOOLS = [
                         'type': 'string',
                         'enum': ['compra', 'venda'],
                         'description': 'compra = USDC→OSMO, venda = OSMO→USDC'
-                    },
-                    'quantidade': {
-                        'type': 'number',
-                        'description': (
-                            'Quantidade em unidades (não micro). '
-                            'Para compra: quantidade em USDC. '
-                            'Para venda: quantidade em OSMO.'
-                        )
                     }
                 },
-                'required': ['address', 'direcao', 'quantidade']
+                'required': ['address', 'direcao']
             }
         }
     }
@@ -185,6 +187,51 @@ def calculate_ema(prices: list, period: int) -> list:
     return ema
 
 
+# ── Posição inferida pelo saldo real ──────────────────────────
+
+def _inferir_posicao(saldo: dict) -> str:
+    """
+    Define posição com base no valor real da carteira.
+    Se ≥80% do valor total (em USDC) estiver em OSMO → comprado.
+    Independe do histórico de trades.
+    """
+    preco = get_current_price() or 0
+    valor_osmo = saldo.get('osmo', 0) * preco
+    valor_usdc = saldo.get('usdc', 0)
+    total = valor_osmo + valor_usdc
+    if total == 0:
+        return 'vendido/sem_posicao'
+    if (valor_osmo / total) >= 0.8:
+        return 'comprado'
+    return 'vendido/sem_posicao'
+
+
+# ── Quantidade automática do swap ─────────────────────────────
+
+def _calcular_quantidade(direcao: str, saldo: dict) -> tuple:
+    """
+    Retorna (quantidade, erro).
+    Compra: 100% do saldo USDC.
+    Venda:  saldo OSMO - OSMO_GAS_RESERVE.
+    """
+    if direcao == 'compra':
+        quantidade = saldo.get('usdc', 0)
+        if quantidade <= 0:
+            return 0, 'Saldo USDC insuficiente para compra.'
+        return quantidade, None
+
+    # venda
+    osmo_disponivel = saldo.get('osmo', 0)
+    quantidade = osmo_disponivel - OSMO_GAS_RESERVE
+    if quantidade <= 0:
+        return 0, (
+            f'Saldo OSMO insuficiente para venda. '
+            f'Disponível: {osmo_disponivel:.4f} OSMO, '
+            f'reserva mínima: {OSMO_GAS_RESERVE} OSMO.'
+        )
+    return quantidade, None
+
+
 # ── Implementações das Tools ───────────────────────────────────
 
 def _exec_tool_controle(address: str, timeframe: str) -> dict:
@@ -198,7 +245,7 @@ def _exec_tool_controle(address: str, timeframe: str) -> dict:
     history_r  = fetch_kline_history(timeframe)
     history    = history_r.get('history', []) if history_r.get('success') else []
     last_trade = get_last_trade()
-    posicao    = 'comprado' if (last_trade and last_trade.get('posicao') == 'compra') else 'vendido/sem_posicao'
+    posicao    = _inferir_posicao(saldo)
 
     lucro_usdc = None
     if last_trade and 'saldo_depois' in last_trade:
@@ -216,7 +263,7 @@ def _exec_tool_controle(address: str, timeframe: str) -> dict:
 
 
 def _exec_tool_analise(address: str, timeframe: str) -> dict:
-    from swap import get_balance, get_last_trade, _parse_balances
+    from swap import get_balance, _parse_balances
 
     result = fetch_kline_history(timeframe)
     if not result.get('success'):
@@ -235,8 +282,7 @@ def _exec_tool_analise(address: str, timeframe: str) -> dict:
 
     bal_result = get_balance(address)
     saldo      = _parse_balances(bal_result.get('balances', [])) if bal_result.get('success') else {}
-    last_trade = get_last_trade()
-    posicao    = 'comprado' if (last_trade and last_trade.get('posicao') == 'compra') else 'vendido/sem_posicao'
+    posicao    = _inferir_posicao(saldo)
 
     return {
         'timeframe':         timeframe,
@@ -253,7 +299,6 @@ def _exec_tool_analise(address: str, timeframe: str) -> dict:
         'ema21_hist':        [round(v, 6) for v in [x for x in ema21 if x][-10:]],
         'saldo':             saldo,
         'posicao':           posicao,
-        'ultimo_trade':      last_trade,
         'gerado_em':         datetime.now(timezone.utc).isoformat(),
     }
 
@@ -272,12 +317,47 @@ def _dispatch_tool(name: str, args: dict) -> str:
     try:
         if name == 'tool_controle':
             result = _exec_tool_controle(args.get('address', ''), args.get('timeframe', '15m'))
+
         elif name == 'tool_analise':
             result = _exec_tool_analise(args.get('address', ''), args.get('timeframe', '15m'))
+
         elif name == 'tool_swap':
-            result = _exec_tool_swap(args.get('address', ''), args.get('direcao', ''), float(args.get('quantidade', 0)))
+            from swap import get_balance, _parse_balances
+
+            address = args.get('address', '')
+            direcao = args.get('direcao', '')
+
+            # Consulta saldo real
+            bal_result = get_balance(address)
+            saldo      = _parse_balances(bal_result.get('balances', [])) if bal_result.get('success') else {}
+            posicao    = _inferir_posicao(saldo)
+
+            # Barreira de posição
+            if posicao == 'comprado' and direcao == 'compra':
+                result = {
+                    'error': (
+                        'Operação bloqueada: carteira já está comprada '
+                        '(≥80% do saldo em OSMO). Venda antes de comprar novamente.'
+                    )
+                }
+            elif posicao == 'vendido/sem_posicao' and direcao == 'venda':
+                result = {
+                    'error': (
+                        'Operação bloqueada: carteira não tem posição em OSMO '
+                        '(<80% do saldo em OSMO). Compre antes de vender.'
+                    )
+                }
+            else:
+                # Calcula quantidade automaticamente pelo saldo real
+                quantidade, erro = _calcular_quantidade(direcao, saldo)
+                if erro:
+                    result = {'error': erro}
+                else:
+                    result = _exec_tool_swap(address, direcao, quantidade)
+
         else:
             result = {'error': f'Tool desconhecida: {name}'}
+
     except Exception as e:
         result = {'error': str(e)}
 
@@ -288,18 +368,7 @@ def _dispatch_tool(name: str, args: dict) -> str:
 
 def stream_ai_analysis(address: str, timeframe: str = '15m'):
     """
-    Generator SSE com agentic loop single-context:
-
-    - A IA chama tools → backend executa → resultado entra no contexto
-    - Isso se repete até a IA não chamar mais tools
-    - Só então a resposta final é gerada em streaming
-
-    Eventos SSE especiais (JSON com campo 'phase'):
-      {"phase": "intent", "message": "..."}
-      {"phase": "tool_running", "tool": "tool_controle"}
-      {"phase": "tool_result",  "tool": "...", "result": {...}}
-      {"phase": "analysis",     "message": "..."}
-    Depois: chunks SSE padrão OpenAI (delta.content)
+    Generator SSE com agentic loop single-context.
     """
     token = hf_resolve_api_token()
     if not token:
@@ -325,7 +394,6 @@ def stream_ai_analysis(address: str, timeframe: str = '15m'):
 
     yield _sse({'phase': 'intent', 'message': 'Analisando mercado…'})
 
-    # ── Agentic loop: resolve tools até a IA parar de chamar ──
     for _ in range(MAX_TOOL_ROUNDS):
 
         try:
@@ -355,14 +423,11 @@ def stream_ai_analysis(address: str, timeframe: str = '15m'):
         msg        = choice['message']
         tool_calls = msg.get('tool_calls') or []
 
-        # Adiciona resposta do assistente ao contexto
         messages.append(msg)
 
-        # IA não quer mais chamar tools → sai do loop para streaming
         if not tool_calls:
             break
 
-        # Executa cada tool e adiciona resultado ao contexto
         for tc in tool_calls:
             tool_name = tc['function']['name']
             tool_id   = tc['id']
@@ -383,7 +448,6 @@ def stream_ai_analysis(address: str, timeframe: str = '15m'):
 
             yield _sse({'phase': 'tool_result', 'tool': tool_name, 'result': result_preview})
 
-            # Resultado entra no contexto — IA lê no próximo round
             messages.append({
                 'role':         'tool',
                 'tool_call_id': tool_id,
@@ -435,6 +499,8 @@ def get_position_signal(address: str, timeframe: str = '15m'):
         f"EMA9: {data['ema9']:.6f} | EMA21: {data['ema21']:.6f} | Tendência: {data['tendencia']}\n"
         f"Posição atual: {data['posicao']}\n"
         f"Últimos 5 preços: {', '.join(str(p) for p in data['ultimos_10_precos'][:5])}\n\n"
+        f"REGRA: se posicao=comprado só responda VENDE ou ESPERA. "
+        f"Se posicao=vendido/sem_posicao só responda COMPRA ou ESPERA.\n"
         f"Responda APENAS com uma única palavra: COMPRA, VENDE ou ESPERA."
     )
 

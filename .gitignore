@@ -4,3 +4,5 @@ venv/
 .iniciar.sh
 __pycache__
 .env
+key_mapping.json
+trades.json

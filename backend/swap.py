@@ -17,7 +17,7 @@ NODE_URL       = 'https://rpc.osmosis.zone:443'
 CHAIN_ID       = 'osmosis-1'
 POOL_ID        = 1464
 USDC           = 'ibc/498A0751C798A0D9A389AA3691123DADA57DAA4FE165D5C75894505B876BA6E4'
-SLIPPAGE       = 0.01   # 1%
+SLIPPAGE       = 0.03   # 3%
 GAS_PRICES     = '0.04uosmo'
 GAS_ADJUSTMENT = '1.4'
 
